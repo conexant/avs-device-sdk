@@ -24,6 +24,9 @@
 #elif KWD_SENSORY
 #include <Sensory/SensoryKeywordDetector.h>
 #endif
+#ifdef LED
+#include <LED/LEDManager.h>
+#endif
 #include <Alerts/Storage/SQLiteAlertStorage.h>
 #include <Settings/SQLiteSettingStorage.h>
 #include <AuthDelegate/AuthDelegate.h>
@@ -107,6 +110,8 @@ static alexaClientSDK::avsCommon::utils::logger::Level getLogLevelFromUserInput(
     return alexaClientSDK::avsCommon::utils::logger::convertNameToLevel(userInputLogLevel);
 }
 
+
+
 std::unique_ptr<SampleApplication> SampleApplication::create(
     const std::string& pathToConfig,
     const std::string& pathToInputFolder,
@@ -133,7 +138,6 @@ bool SampleApplication::initialize(
      */
     std::shared_ptr<alexaClientSDK::avsCommon::utils::logger::Logger> consolePrinter =
         std::make_shared<alexaClientSDK::sampleApp::ConsolePrinter>();
-
     if (!logLevel.empty()) {
         auto logLevelValue = getLogLevelFromUserInput(logLevel);
         if (alexaClientSDK::avsCommon::utils::logger::Level::UNKNOWN == logLevelValue) {
@@ -166,7 +170,10 @@ bool SampleApplication::initialize(
         alexaClientSDK::sampleApp::ConsolePrinter::simplePrint("Failed to initialize SDK!");
         return false;
     }
-
+#ifdef LED
+    auto ledManager = std::make_shared<alexaClientSDK::led::LEDManager>();
+#endif
+    
     auto config = alexaClientSDK::avsCommon::utils::configuration::ConfigurationNode::getRoot();
 
     auto httpContentFetcherFactory = std::make_shared<avsCommon::utils::libcurlUtils::HTTPContentFetcherFactory>();
@@ -255,7 +262,11 @@ bool SampleApplication::initialize(
             authDelegate,
             alertStorage,
             settingsStorage,
+#ifdef LED
+            {userInterfaceManager,ledManager},
+#else            
             {userInterfaceManager},
+#endif
             {connectionObserver, userInterfaceManager});
 
     if (!client) {

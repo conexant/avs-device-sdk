@@ -31,6 +31,11 @@ if(SENSORY_KEY_WORD_DETECTOR)
     target_link_libraries(SampleApp SENSORY)
 endif()
 
+if(LED)
+    target_link_libraries(SampleApp LED)
+    configure_file(host_demo.exe ${CMAKE_CURRENT_BINARY_DIR}/host_demo.exe COPYONLY)
+endif()
+
 if (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
     target_link_libraries(SampleApp
         "-framework CoreAudio" 

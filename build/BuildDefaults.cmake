@@ -32,3 +32,8 @@ include(PortAudio)
 
 # Setup Test Options variables.
 include(TestOptions)
+
+# Setup LED variables.
+if(LED)
+	include(LED)
+endif()

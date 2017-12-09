@@ -32,6 +32,8 @@ add_subdirectory("ApplicationUtilities")
 add_subdirectory("SampleApp")
 add_subdirectory("Storage")
 add_subdirectory("doc")
-
+if(LED)
+    add_subdirectory("LED")
+endif()
 # Create .pc pkg-config file
 include(build/cmake/GeneratePkgConfig.cmake)
