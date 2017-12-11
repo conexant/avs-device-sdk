@@ -1,4 +1,11 @@
 #!/bin/bash
+#----------------------------------------------------------------
+# Install script for C++ SDK
+# To start the C++ SDK installion, go to the directory this file is located in and send the following command in a terminal:
+# bash install.sh 
+#----------------------------------------------------------------
+# Once the above command is run, please answer the prompts and acknowledge the license agreement.
+#----------------------------------------------------------------
 
 ClientSecret=YOUR_CLIENT_SECRET
 ClientId=YOUR_CLIENT_ID
@@ -9,17 +16,17 @@ DeviceSerialNumber=123456
 Origin=$(pwd)
 
 get_answer() {
-	local Answer
-	clear
-	echo ""
-	echo "Your account credentials aren't filled out"
-	echo "These values can be found or created here:"
+  local Answer
+  clear
+  echo ""
+  echo "Account credentials have not been set."
+  echo "Your account credentials can be found or created here:"
   echo "https://developer.amazon.com/edw/home.html"
-	echo "Please write or copy and paste the $1 "
+  echo "Please write or copy and paste the $1 "
   echo "OR edit this script with the values and run it again"
-	echo "Enter 'q' to quit"
+  echo "Enter 'q' to quit"
   while [ "${#Answer}" -lt 1 ]; do
-    read -p ">>" Answer
+    read -p "Enter your $1>>" Answer
     if [ "$Answer" = "q" ]; then
       exit
     fi
@@ -237,7 +244,7 @@ echo '--------------------------------------------------------------------------
 echo "If you haven't already done so, in your product's security profile found in the AVS developer console, add"
 echo "http://localhost:3000 to allowed origins and"
 echo "http://localhost:3000/authresponse to allowed return URLs"
-echo 'Open up your browser, go to http://localshost:3000, and login or create an account.'
+echo 'Open up your browser, go to http://localhost:3000, and login or create an account.'
 echo '--------------------------------------------------------------------------'
 cd /home/pi/sdk-folder/sdk-build && python AuthServer/AuthServer.py
 echo ''
