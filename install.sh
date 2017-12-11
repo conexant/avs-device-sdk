@@ -216,7 +216,7 @@ if [ "$device_type" == "4-Mic EVK" ]; then
   install_rpi_ws281x
 else
   #Change default playback device plugin
-  sed -i '37s/.*/    slave.pcm "hw:1,0"/' $Origin/leftarc
+  sed -i '37s/.*/    slave.pcm "hw:0,0"/' $Origin/leftarc
   #Force 3.5mm jack instead of HDMI audio
   sudo amixer cset numid=3 1
 fi
