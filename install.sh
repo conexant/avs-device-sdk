@@ -12,6 +12,7 @@ ClientId=YOUR_CLIENT_ID
 ProductId=YOUR_PRODUCT_ID
 Locale=en-US
 DeviceSerialNumber=123456
+RefreshToken=RefreshTokenPlaceholder
 
 Origin=$(pwd)
 
@@ -69,35 +70,6 @@ select_option()
       esac
     done
   fi
-}
-
-
-write_config() {
-  echo "{" > $Origin/AlexaClientSDKConfig.json
-  echo "    \"authDelegate\":{" >> $Origin/AlexaClientSDKConfig.json
-  echo "        \"clientSecret\":\"$ClientSecret\"," >> $Origin/AlexaClientSDKConfig.json
-  echo "        \"deviceSerialNumber\":\"$DeviceSerialNumber\"," >> $Origin/AlexaClientSDKConfig.json
-  echo "        \"refreshToken\":\"REFRESH_TOKEN_GOES_HERE\"," >> $Origin/AlexaClientSDKConfig.json
-  echo "        \"clientId\":\"$ClientId\"," >> $Origin/AlexaClientSDKConfig.json
-  echo "        \"productId\":\"$ProductId\"" >> $Origin/AlexaClientSDKConfig.json
-  echo "   }," >> $Origin/AlexaClientSDKConfig.json
-  echo "   \"alertsCapabilityAgent\":{" >> $Origin/AlexaClientSDKConfig.json
-  echo "        \"databaseFilePath\":\"/home/pi/sdk-folder/application-necessities/alerts.db\"," >> $Origin/AlexaClientSDKConfig.json
-  echo "        \"alarmSoundFilePath\":\"/home/pi/sdk-folder/application-necessities/sound-files/med_system_alerts_melodic_01._TTH_.mp3\"," >> $Origin/AlexaClientSDKConfig.json
-  echo "        \"alarmShortSoundFilePath\":\"/home/pi/sdk-folder/application-necessities/sound-files/med_system_alerts_melodic_01_short._TTH_.wav\"," >> $Origin/AlexaClientSDKConfig.json
-  echo "        \"timerSoundFilePath\":\"/home/pi/sdk-folder/application-necessities/sound-files/med_system_alerts_melodic_02._TTH_.mp3\"," >> $Origin/AlexaClientSDKConfig.json
-  echo "        \"timerShortSoundFilePath\":\"/home/pi/sdk-folder/application-necessities/sound-files/med_system_alerts_melodic_02_short._TTH_.wav\"" >> $Origin/AlexaClientSDKConfig.json
-  echo "   }," >> $Origin/AlexaClientSDKConfig.json
-  echo "   \"settings\":{" >> $Origin/AlexaClientSDKConfig.json
-  echo "        \"databaseFilePath\":\"/home/pi/sdk-folder/application-necessities/settings.db\"," >> $Origin/AlexaClientSDKConfig.json
-  echo "        \"defaultAVSClientSettings\":{" >> $Origin/AlexaClientSDKConfig.json
-  echo "            \"locale\":\"$Locale\"" >> $Origin/AlexaClientSDKConfig.json
-  echo "        }" >> $Origin/AlexaClientSDKConfig.json
-  echo "   }," >> $Origin/AlexaClientSDKConfig.json
-  echo "   \"certifiedSender\":{" >> $Origin/AlexaClientSDKConfig.json
-  echo "        \"databaseFilePath\":\"/home/pi/sdk-folder/application-necessities/certifiedSender.db\"" >> $Origin/AlexaClientSDKConfig.json
-  echo "   }" >> $Origin/AlexaClientSDKConfig.json
-  echo "}" >> $Origin/AlexaClientSDKConfig.json
 }
 
 write_run() {
@@ -201,7 +173,6 @@ sudo apt-get -y install gcc cmake build-essential libsqlite3-dev libcurl4-openss
 pip install commentjson
 
 cd /home/pi/sdk-folder/third-party && wget -c http://www.portaudio.com/archives/pa_stable_v190600_20161030.tgz && tar zxf pa_stable_v190600_20161030.tgz && cd portaudio && ./configure --without-jack && make
-cd /home/pi/sdk-folder/application-necessities/sound-files/ && wget -c https://images-na.ssl-images-amazon.com/images/G/01/mobile-apps/dex/alexa/alexa-voice-service/docs/audio/states/med_system_alerts_melodic_02._TTH_.mp3 && wget -c https://images-na.ssl-images-amazon.com/images/G/01/mobile-apps/dex/alexa/alexa-voice-service/docs/audio/states/med_system_alerts_melodic_02_short._TTH_.wav && wget -c https://images-na.ssl-images-amazon.com/images/G/01/mobile-apps/dex/alexa/alexa-voice-service/docs/audio/states/med_system_alerts_melodic_01._TTH_.mp3 && wget -c https://images-na.ssl-images-amazon.com/images/G/01/mobile-apps/dex/alexa/alexa-voice-service/docs/audio/states/med_system_alerts_melodic_01_short._TTH_.wav
 
 chmod +x $Origin/SampleApp/src/host_demo.exe
 
@@ -228,16 +199,13 @@ eval "$avs_cmake"
 make SampleApp -j2
 
 
-
 cp $Origin/leftarc /home/pi/leftarc
 write_run
 chmod +x $Origin/run.sh
 cp $Origin/run.sh /home/pi/run.sh
 rm $Origin/run.sh
 
-write_config
-cp $Origin/AlexaClientSDKConfig.json /home/pi/sdk-folder/sdk-build/Integration/AlexaClientSDKConfig.json
-rm $Origin/AlexaClientSDKConfig.json 
+python $Origin/config.py /home/pi/sdk-folder/sdk-build/Integration/AlexaClientSDKConfig.json $ClientId $ClientSecret $ProductId $DeviceSerialNumber $RefreshToken $Locale
 
 echo ''
 echo '--------------------------------------------------------------------------'
