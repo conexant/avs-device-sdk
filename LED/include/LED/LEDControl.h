@@ -24,12 +24,17 @@ enum LEDState {
 	THINKING,
 	SPEAKING,
 	FINISHED,
-	VOLUME,
 	ERROR,
 	ALARM,
 	TIMER,
 	STARTUP,
 	NOTIFICATION
+};
+
+enum TempState {
+	NONE,
+	MUTED,
+	VOLUME
 };
 
 class LEDControl{
@@ -39,6 +44,7 @@ public:
 //Animations
 	void DOA(int doa);
 	void volume(int volume);
+	void mute();
 	void thinking();
 	void startup();
 	void speech();
@@ -55,6 +61,10 @@ public:
 	bool m_stop;
 	//Current animation
 	LEDState m_state = LEDState::STARTUP;
+	//Temporary animation
+	TempState m_tempState = TempState::NONE;
+	//Current volume
+	int m_volume;
 	//For serialization, public since TLED will be changing the states
 	std::mutex m_mutex;
 
@@ -66,7 +76,7 @@ private:
 	//Blends two color with color2 by percentage amount
 	ws2811_led_t blendColor(ws2811_led_t color, ws2811_led_t color2, unsigned char percentage);
 	//Pulse animation
-	void pulse(ws2811_led_t color, uint32_t sleepMicros = 50000, unsigned char iterations = 10);
+	void pulse(ws2811_led_t color, uint32_t sleepMicros = 50000, unsigned char iterations = 10, int count = LED_COUNT, bool doStop = true);
 	//Sets the color of a pixel
 	void setPixelColor(ws2811_led_t color, int pixel);
 	//Sets the color of all pixels

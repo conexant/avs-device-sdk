@@ -34,10 +34,33 @@ void LEDManager::onDialogUXStateChanged(
 		ledC->m_state = LEDState::FINISHED;
 		break;
 	default:
-		//TODO: log
 		break;
 	}
 	
+	ledC->m_mutex.unlock();
+}
+
+void LEDManager::onSpeakerSettingsChanged(
+    const avsCommon::sdkInterfaces::SpeakerManagerObserverInterface::Source& source,
+    const avsCommon::sdkInterfaces::SpeakerInterface::Type& type,
+    const avsCommon::sdkInterfaces::SpeakerInterface::SpeakerSettings& settings) {
+	if(m_oldSettings == settings)
+		return;
+	m_oldSettings = settings;
+	
+	ledC->m_stop = true;
+	ledC->m_mutex.lock();
+
+	if (settings.mute)
+	{ 
+		ledC->m_tempState = TempState::MUTED;
+	}
+	else
+	{
+		ledC->m_volume = (int)settings.volume;
+		ledC->m_tempState = TempState::VOLUME;
+	}
+
 	ledC->m_mutex.unlock();
 }
 }}

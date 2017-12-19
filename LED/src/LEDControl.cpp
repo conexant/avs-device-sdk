@@ -78,6 +78,11 @@ void LEDControl::volume(int volume) {
 	}
 }
 
+void LEDControl::mute() {
+	pulse(ledcolors[3], 40000, 10, LED_COUNT/10, false);
+	pulse(ledcolors[3], 40000, 10, LED_COUNT/10, false);
+}
+
 
 void LEDControl::thinking() {
 	for (int i = 0; i<8; i++)
@@ -237,7 +242,7 @@ void LEDControl::timer() {
 
 void LEDControl::micMute() {
 	for(int i = 4; i>=0; i--)
-	{		
+	{
 		setColor(fadeColor(ledcolors[0], i*20));
 		render();
 		if (m_stop)
@@ -282,22 +287,24 @@ ws2811_led_t LEDControl::blendColor(ws2811_led_t color, ws2811_led_t color2, uns
 }
 
 
-void LEDControl::pulse(ws2811_led_t col, uint32_t sleepMicros, unsigned char iterations) {
+void LEDControl::pulse(ws2811_led_t col, uint32_t sleepMicros, unsigned char iterations, int count, bool doStop) {
 	int j = 100/iterations;
 	for (int i = iterations; i >= 0; i--) 
 	{
-		setColor(fadeColor(col, i * j));
+		for(int k = 0; k < count; k++)
+			setPixelColor(fadeColor(col, i * j), k);
 		render();
-		if (m_stop)
+		if (doStop && m_stop)
 			return;
 		usleep(sleepMicros);
 	}
 	//usleep(sleepMicros*2);
 	for (int i = 0; i<=iterations; i++) 
 	{
-		setColor(fadeColor(col, i * j));
+		for(int k = 0; k < count; k++)
+			setPixelColor(fadeColor(col, i * j), k);
 		render();
-		if (m_stop)
+		if (doStop && m_stop)
 			return;
 		usleep(sleepMicros);
 	}
@@ -349,6 +356,20 @@ void LEDControl::ledLoop() {
 	{
 		//Lock so that the state doesn't change mid loop
 		m_mutex.lock();
+
+		switch(m_tempState) {
+			case TempState::VOLUME:
+				volume(m_volume);
+				m_tempState = TempState::NONE;
+				break;
+			case TempState::MUTED:
+				mute();
+				m_tempState = TempState::NONE;
+				break;
+			default:
+				break;
+		}
+
 		//Run until the state is going to change
 		while(!m_stop) {
 			switch(m_state) {
@@ -367,9 +388,6 @@ void LEDControl::ledLoop() {
 					break;
 				case LEDState::FINISHED:
 					finished();
-					break;
-				case LEDState::VOLUME:
-					//TODO: Never called, so no need to get a volume 
 					break;
 				case LEDState::ERROR:
 					error();
@@ -395,7 +413,7 @@ void LEDControl::ledLoop() {
 		render();
 		m_mutex.unlock();
 		m_stop = false;
-		//Might not be needed TODO:Try without
+
 		usleep(50000);
 	}
 }

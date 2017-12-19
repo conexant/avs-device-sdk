@@ -316,6 +316,9 @@ bool SampleApplication::initialize(
     client->sendDefaultSettings();
 
     client->addSpeakerManagerObserver(userInterfaceManager);
+#ifdef LED
+    client->addSpeakerManagerObserver(ledManager);
+#endif
 
     /*
      * Add GUI Renderer as an observer if display cards are supported.  The default is supported unless specified
