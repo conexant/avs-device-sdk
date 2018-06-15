@@ -113,6 +113,43 @@ install_I2S_driver()
   sudo cp arch/arm/boot/zImage /boot/$KERNEL.img
 }
 
+#ATS certification is enabled by Amazon after June 15 2018, 
+#Please get more info:https://developer.amazon.com/zh/docs/alexa-voice-service/update-certificate-authorities.html
+ats_certification()
+{
+  if [ ! -d "/usr/share/ca-certificates" ]; then
+  echo "Please make sure your Rpi intall OpenSSL correctly, could't find folder $SYS_CERT_FOLDER"
+  exit -1
+  fi
+
+  if [ ! -f "/etc/ca-certificates.conf" ]; then
+    echo "Please make sure your Rpi intall OpenSSL correctly, could't find folder $SYS_CERT_FILE"
+    exit -1
+  fi
+
+  cd /usr/share/ca-certificates
+
+  sudo wget https://www.amazontrust.com/repository/AmazonRootCA1.pem -O /usr/share/ca-certificates/AmazonRootCA1.pem
+  
+  if [ $? -eq 0 ];then
+    echo "Get CA File successfull."
+  else
+    echo "Get CA File Error."
+    exit -1
+  fi
+  sudo chmod 606 /etc/ca-certificates.conf
+
+  sudo echo "AmazonRootCA1.pem" >> /etc/ca-certificates.conf
+  sudo update-ca-certificates
+  openssl s_client -tls1_2 -connect avs-ats-cert-test.amazon.com:443 -verify 10
+
+  if [ $? -eq 0 ];then
+    echo "ATS certification OK."
+  else
+    echo "ATS certification Error, Here is the guide about the ATS certification from Amazon:https://aws.amazon.com/cn/blogs/security/how-to-prepare-for-aws-move-to-its-own-certificate-authority/"
+    exit -1
+  fi
+}
 
 if [ "$ClientSecret" = "YOUR_CLIENT_SECRET" ]; then
   ClientSecret=""
@@ -198,6 +235,7 @@ cd /home/pi/sdk-folder/sdk-build
 eval "$avs_cmake"
 make SampleApp -j2
 
+ats_certification
 
 cp $Origin/leftarc /home/pi/leftarc
 write_run
