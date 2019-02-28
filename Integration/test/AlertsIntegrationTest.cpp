@@ -1,7 +1,5 @@
 /*
- * AlertsIntegrationTest.cpp
- *
- * Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright 2017-2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License").
  * You may not use this file except in compliance with the License.
@@ -16,56 +14,52 @@
  */
 
 /// @file AlertsIntegrationTest.cpp
-#include <gtest/gtest.h>
-#include <string>
-#include <future>
-#include <fstream>
+
 #include <chrono>
 #include <deque>
-#include <mutex>
-#include <unordered_map>
+#include <fstream>
+#include <future>
 #include <iostream>
+#include <mutex>
+#include <string>
+#include <unordered_map>
 
-#include "ACL/Transport/HTTP2MessageRouter.h"
-#include "ACL/Transport/PostConnectSynchronizer.h"
-#include "ADSL/DirectiveSequencer.h"
-#include "ADSL/MessageInterpreter.h"
-#include "AFML/FocusManager.h"
-#include "AIP/AudioInputProcessor.h"
-#include "AIP/AudioProvider.h"
-#include "AIP/Initiator.h"
-#include "AVSCommon/AVS/Attachment/AttachmentManager.h"
-#include "AVSCommon/AVS/Attachment/InProcessAttachmentReader.h"
-#include "AVSCommon/AVS/Attachment/InProcessAttachmentWriter.h"
-#include "AVSCommon/AVS/BlockingPolicy.h"
-#include "AVSCommon/AVS/Initialization/AlexaClientSDKInit.h"
-#include "AVSCommon/SDKInterfaces/DirectiveHandlerInterface.h"
-#include "AVSCommon/SDKInterfaces/DirectiveHandlerResultInterface.h"
-#include "AVSCommon/Utils/JSON/JSONUtils.h"
-#include "AVSCommon/Utils/LibcurlUtils/HTTPContentFetcherFactory.h"
-#include "AVSCommon/Utils/Logger/LogEntry.h"
-#include "Alerts/AlertObserverInterface.h"
-#include "Alerts/AlertsCapabilityAgent.h"
-#include "Alerts/Storage/SQLiteAlertStorage.h"
-#include "Audio/AlertsAudioFactory.h"
-#include "AuthDelegate/AuthDelegate.h"
-#include "CertifiedSender/CertifiedSender.h"
-#include "CertifiedSender/SQLiteMessageStorage.h"
-#include "ContextManager/ContextManager.h"
-#include "Integration/AuthObserver.h"
-#include "Integration/ClientMessageHandler.h"
-#include "Integration/ConnectionStatusObserver.h"
+#include <gtest/gtest.h>
+
+#include <ADSL/DirectiveSequencer.h>
+#include <ADSL/MessageInterpreter.h>
+#include <AFML/FocusManager.h>
+#include <AIP/AudioInputProcessor.h>
+#include <AIP/AudioProvider.h>
+#include <AIP/Initiator.h>
+#include <Alerts/AlertObserverInterface.h>
+#include <Alerts/AlertsCapabilityAgent.h>
+#include <Alerts/Storage/SQLiteAlertStorage.h>
+#include <Audio/AlertsAudioFactory.h>
+#include <AVSCommon/AVS/Attachment/InProcessAttachmentReader.h>
+#include <AVSCommon/AVS/Attachment/InProcessAttachmentWriter.h>
+#include <AVSCommon/AVS/BlockingPolicy.h>
+#include <AVSCommon/SDKInterfaces/DirectiveHandlerInterface.h>
+#include <AVSCommon/SDKInterfaces/DirectiveHandlerResultInterface.h>
+#include <AVSCommon/SDKInterfaces/MockSpeakerManager.h>
+#include <AVSCommon/Utils/JSON/JSONUtils.h>
+#include <AVSCommon/Utils/LibcurlUtils/HTTPContentFetcherFactory.h>
+#include <AVSCommon/Utils/Logger/LogEntry.h>
+#include <CertifiedSender/CertifiedSender.h>
+#include <CertifiedSender/SQLiteMessageStorage.h>
+#include <SpeechSynthesizer/SpeechSynthesizer.h>
+#include <System/UserInactivityMonitor.h>
+
+#include "Integration/ACLTestContext.h"
 #include "Integration/ObservableMessageRequest.h"
 #include "Integration/TestAlertObserver.h"
 #include "Integration/TestDirectiveHandler.h"
 #include "Integration/TestExceptionEncounteredSender.h"
 #include "Integration/TestMessageSender.h"
 #include "Integration/TestSpeechSynthesizerObserver.h"
-#include "SpeechSynthesizer/SpeechSynthesizer.h"
-#include "System/UserInactivityMonitor.h"
 
 #ifdef GSTREAMER_MEDIA_PLAYER
-#include "MediaPlayer/MediaPlayer.h"
+#include <MediaPlayer/MediaPlayer.h>
 #else
 #include "Integration/TestMediaPlayer.h"
 #endif
@@ -76,15 +70,12 @@ namespace test {
 
 using namespace acl;
 using namespace adsl;
-using namespace authDelegate;
 using namespace avsCommon;
 using namespace avsCommon::avs;
 using namespace avsCommon::avs::attachment;
 using namespace avsCommon::sdkInterfaces;
-using namespace avsCommon::avs::initialization;
 using namespace avsCommon::utils::mediaPlayer;
 using namespace certifiedSender;
-using namespace contextManager;
 using namespace sdkInterfaces;
 using namespace avsCommon::utils::sds;
 using namespace avsCommon::utils::json;
@@ -109,7 +100,7 @@ static const std::string RECOGNIZE_LONG_TIMER_AUDIO_FILE_NAME = "/recognize_long
 // This is a 16 bit 16 kHz little endian linear PCM audio file of "Set a timer for 15 seconds" to be recognized.
 static const std::string RECOGNIZE_VERY_LONG_TIMER_AUDIO_FILE_NAME = "/recognize_very_long_timer_test.wav";
 // This is a 16 bit 16 kHz little endian linear PCM audio file of "Stop" to be recognized.
-static const std::string RECOGNIZE_STOP_AUDIO_FILE_NAME = "/recognize_stop_timer_test.wav";
+static const std::string RECOGNIZE_STOP_AUDIO_FILE_NAME = "/recognize_stop_test.wav";
 // This is a 16 bit 16 kHz little endian linear PCM audio file of "Cancel the timer" to be recognized.
 static const std::string RECOGNIZE_CANCEL_TIMER_AUDIO_FILE_NAME = "/recognize_cancel_timer_test.wav";
 // This string to be used for Speak Directives which use the NAMESPACE_SPEECH_SYNTHESIZER namespace.
@@ -184,8 +175,10 @@ static const std::string TAG("AlertsIntegrationTest");
  */
 #define LX(event) alexaClientSDK::avsCommon::utils::logger::LogEntry(TAG, event)
 
-std::string configPath;
-std::string inputPath;
+/// Path to the AlexaClientSDKConfig.json file (from command line arguments).
+static std::string g_configPath;
+/// Path to resources (e.g. audio files) for tests (from command line arguments).
+static std::string g_inputPath;
 
 /// A test observer that mocks out the ChannelObserverInterface##onFocusChanged() call.
 class TestClient : public ChannelObserverInterface {
@@ -256,30 +249,33 @@ public:
 class AlertsTest : public ::testing::Test {
 protected:
     virtual void SetUp() override {
-        std::ifstream infile(configPath);
-        ASSERT_TRUE(infile.good());
-        ASSERT_TRUE(AlexaClientSDKInit::initialize({&infile}));
-        m_authObserver = std::make_shared<AuthObserver>();
-        m_authDelegate = AuthDelegate::create();
-        m_authDelegate->addAuthObserver(m_authObserver);
-        m_attachmentManager = std::make_shared<avsCommon::avs::attachment::AttachmentManager>(
-            AttachmentManager::AttachmentType::IN_PROCESS);
-        m_connectionStatusObserver = std::make_shared<ConnectionStatusObserver>();
-        bool isEnabled = false;
-        m_messageRouter = std::make_shared<HTTP2MessageRouter>(m_authDelegate, m_attachmentManager);
+        m_context = ACLTestContext::create(g_configPath);
+        ASSERT_TRUE(m_context);
+
         m_exceptionEncounteredSender = std::make_shared<TestExceptionEncounteredSender>();
         m_dialogUXStateAggregator = std::make_shared<avsCommon::avs::DialogUXStateAggregator>();
 
         m_directiveSequencer = DirectiveSequencer::create(m_exceptionEncounteredSender);
         m_messageInterpreter = std::make_shared<MessageInterpreter>(
-            m_exceptionEncounteredSender, m_directiveSequencer, m_attachmentManager);
+            m_exceptionEncounteredSender, m_directiveSequencer, m_context->getAttachmentManager());
 
         // Set up connection and connect
         m_avsConnectionManager = std::make_shared<TestMessageSender>(
-            m_messageRouter, isEnabled, m_connectionStatusObserver, m_messageInterpreter);
-        ASSERT_NE(nullptr, m_avsConnectionManager);
+            m_context->getMessageRouter(), false, m_context->getConnectionStatusObserver(), m_messageInterpreter);
+        ASSERT_TRUE(m_avsConnectionManager);
 
-        m_focusManager = std::make_shared<FocusManager>();
+        m_focusManager = std::make_shared<FocusManager>(FocusManager::getDefaultAudioChannels());
+        std::shared_ptr<avsCommon::sdkInterfaces::test::MockSpeakerManager> mockSpeakerManager =
+            std::make_shared<avsCommon::sdkInterfaces::test::MockSpeakerManager>();
+        ON_CALL(*(mockSpeakerManager.get()), getSpeakerSettings(testing::_, testing::_))
+            .WillByDefault(testing::Invoke([](avsCommon::sdkInterfaces::SpeakerInterface::Type,
+                                              avsCommon::sdkInterfaces::SpeakerInterface::SpeakerSettings*) {
+                std::promise<bool> promise;
+                promise.set_value(true);
+                return promise.get_future();
+            }));
+        m_speakerManager = mockSpeakerManager;
+
         m_testContentClient = std::make_shared<TestClient>();
         ASSERT_TRUE(m_focusManager->acquireChannel(
             FocusManager::CONTENT_CHANNEL_NAME, m_testContentClient, CONTENT_ACTIVITY_ID));
@@ -289,10 +285,6 @@ protected:
         ASSERT_TRUE(focusChanged);
 
         m_testDialogClient = std::make_shared<TestClient>();
-
-        m_contextManager = ContextManager::create();
-        ASSERT_NE(nullptr, m_contextManager);
-        PostConnectObject::init(m_contextManager);
 
 #ifdef GSTREAMER_MEDIA_PLAYER
         m_speakMediaPlayer =
@@ -338,7 +330,7 @@ protected:
         m_AudioInputProcessor = AudioInputProcessor::create(
             m_directiveSequencer,
             m_avsConnectionManager,
-            m_contextManager,
+            m_context->getContextManager(),
             m_focusManager,
             m_dialogUXStateAggregator,
             m_exceptionEncounteredSender,
@@ -351,8 +343,7 @@ protected:
             m_speakMediaPlayer,
             m_avsConnectionManager,
             m_focusManager,
-            m_contextManager,
-            m_attachmentManager,
+            m_context->getContextManager(),
             m_exceptionEncounteredSender,
             m_dialogUXStateAggregator);
         ASSERT_NE(nullptr, m_speechSynthesizer);
@@ -370,24 +361,34 @@ protected:
 
         auto alertsAudioFactory = std::make_shared<applicationUtilities::resources::audio::AlertsAudioFactory>();
 
-        m_alertStorage = std::make_shared<storage::SQLiteAlertStorage>(alertsAudioFactory);
+        m_alertStorage = capabilityAgents::alerts::storage::SQLiteAlertStorage::create(
+            avsCommon::utils::configuration::ConfigurationNode::getRoot(), alertsAudioFactory);
 
         m_alertObserver = std::make_shared<TestAlertObserver>();
 
-        auto messageStorage = std::make_shared<SQLiteMessageStorage>();
+        auto messageStorage =
+            SQLiteMessageStorage::create(avsCommon::utils::configuration::ConfigurationNode::getRoot());
+
+        m_customerDataManager = std::make_shared<registrationManager::CustomerDataManager>();
 
         m_certifiedSender = CertifiedSender::create(
-            m_avsConnectionManager, m_avsConnectionManager->getConnectionManager(), messageStorage);
+            m_avsConnectionManager,
+            m_avsConnectionManager->getConnectionManager(),
+            std::move(messageStorage),
+            m_customerDataManager);
 
         m_alertsAgent = AlertsCapabilityAgent::create(
             m_avsConnectionManager,
+            m_avsConnectionManager->getConnectionManager(),
             m_certifiedSender,
             m_focusManager,
-            m_contextManager,
+            m_speakerManager,
+            m_context->getContextManager(),
             m_exceptionEncounteredSender,
             m_alertStorage,
             alertsAudioFactory,
-            m_alertRenderer);
+            m_alertRenderer,
+            m_customerDataManager);
         ASSERT_NE(m_alertsAgent, nullptr);
         m_alertsAgent->addObserver(m_alertObserver);
         m_alertsAgent->onLocalStop();
@@ -401,36 +402,57 @@ protected:
 
     void TearDown() override {
         disconnect();
-        m_AudioInputProcessor->shutdown();
-        m_directiveSequencer->shutdown();
-        m_speechSynthesizer->shutdown();
+        // Note that these nullptr checks are needed to avoid segaults if @c SetUp() failed.
+        if (m_AudioInputProcessor) {
+            m_AudioInputProcessor->shutdown();
+        }
+        if (m_directiveSequencer) {
+            m_directiveSequencer->shutdown();
+        }
+        if (m_speechSynthesizer) {
+            m_speechSynthesizer->shutdown();
+        }
         if (m_alertsAgent) {
             m_alertsAgent->onLocalStop();
             m_alertsAgent->removeAllAlerts();
             m_alertsAgent->shutdown();
         }
-        m_certifiedSender->shutdown();
-        m_avsConnectionManager->shutdown();
-        AlexaClientSDKInit::uninitialize();
+        if (m_certifiedSender) {
+            m_certifiedSender->shutdown();
+        }
+        if (m_avsConnectionManager) {
+            m_avsConnectionManager->shutdown();
+        }
+        m_context.reset();
+#ifdef GSTREAMER_MEDIA_PLAYER
+        if (m_speakMediaPlayer) {
+            m_speakMediaPlayer->shutdown();
+        }
+        if (m_rendererMediaPlayer) {
+            m_rendererMediaPlayer->shutdown();
+        }
+#endif
+        if (m_userInactivityMonitor) {
+            m_userInactivityMonitor->shutdown();
+        }
     }
 
     /**
      * Connect to AVS.
      */
     void connect() {
-        ASSERT_TRUE(m_authObserver->waitFor(AuthObserver::State::REFRESHED)) << "Retrieving the auth token timed out.";
         m_avsConnectionManager->enable();
-        ASSERT_TRUE(m_connectionStatusObserver->waitFor(ConnectionStatusObserverInterface::Status::CONNECTED))
-            << "Connecting timed out.";
+        m_context->waitForConnected();
     }
 
     /**
      * Disconnect from AVS.
      */
     void disconnect() {
-        m_avsConnectionManager->disable();
-        ASSERT_TRUE(m_connectionStatusObserver->waitFor(ConnectionStatusObserverInterface::Status::DISCONNECTED))
-            << "Connecting timed out.";
+        if (m_avsConnectionManager) {
+            m_avsConnectionManager->disable();
+            m_context->waitForDisconnected();
+        }
     }
 
     std::string getSentEventName(TestMessageSender::SendParams sendParams) {
@@ -503,7 +525,7 @@ protected:
 
         // Put audio onto the SDS saying "Tell me a joke".
         bool error = false;
-        std::string file = inputPath + audioFile;
+        std::string file = g_inputPath + audioFile;
         std::vector<int16_t> audioData = readAudioFromFile(file, &error);
         ASSERT_FALSE(error);
         ASSERT_FALSE(audioData.empty());
@@ -513,26 +535,24 @@ protected:
         ASSERT_TRUE(m_holdToTalkButton->stopRecognizing(m_AudioInputProcessor));
     }
 
-    std::shared_ptr<AuthObserver> m_authObserver;
-    std::shared_ptr<AuthDelegate> m_authDelegate;
-    std::shared_ptr<ConnectionStatusObserver> m_connectionStatusObserver;
-    std::shared_ptr<MessageRouter> m_messageRouter;
+    /// Context for running ACL based tests.
+    std::unique_ptr<ACLTestContext> m_context;
+
     std::shared_ptr<TestMessageSender> m_avsConnectionManager;
     std::shared_ptr<CertifiedSender> m_certifiedSender;
     std::shared_ptr<TestExceptionEncounteredSender> m_exceptionEncounteredSender;
     std::shared_ptr<TestDirectiveHandler> m_directiveHandler;
     std::shared_ptr<DirectiveSequencerInterface> m_directiveSequencer;
     std::shared_ptr<MessageInterpreter> m_messageInterpreter;
-    std::shared_ptr<ContextManager> m_contextManager;
-    std::shared_ptr<avsCommon::avs::attachment::AttachmentManager> m_attachmentManager;
     std::shared_ptr<FocusManager> m_focusManager;
+    std::shared_ptr<SpeakerManagerInterface> m_speakerManager;
     std::shared_ptr<TestClient> m_testContentClient;
     std::shared_ptr<TestClient> m_testDialogClient;
     std::shared_ptr<TestAlertObserver> m_AlertsAgentObserver;
     std::shared_ptr<SpeechSynthesizer> m_speechSynthesizer;
     std::shared_ptr<AlertsCapabilityAgent> m_alertsAgent;
     std::shared_ptr<TestSpeechSynthesizerObserver> m_speechSynthesizerObserver;
-    std::shared_ptr<storage::SQLiteAlertStorage> m_alertStorage;
+    std::shared_ptr<capabilityAgents::alerts::storage::SQLiteAlertStorage> m_alertStorage;
     std::shared_ptr<renderer::RendererInterface> m_alertRenderer;
     std::shared_ptr<TestAlertObserver> m_alertObserver;
     std::shared_ptr<holdToTalkButton> m_holdToTalkButton;
@@ -542,6 +562,7 @@ protected:
     std::shared_ptr<AudioInputStream> m_AudioBuffer;
     std::shared_ptr<AudioInputProcessor> m_AudioInputProcessor;
     std::shared_ptr<UserInactivityMonitor> m_userInactivityMonitor;
+    std::shared_ptr<registrationManager::CustomerDataManager> m_customerDataManager;
 
     FocusState m_focusState;
     std::mutex m_mutex;
@@ -970,7 +991,8 @@ TEST_F(AlertsTest, cancelAlertBeforeItIsActive) {
 /**
  * Test when the storage is removed before an alert is set
  *
- * Close the storage before asking for a 5 second timer. SetAlertFailed and DeleteAlertFailed events are then sent.
+ * Close the storage before asking for a 5 second timer. SetAlertFailed and then DeleteAlertSucceeded events are then
+ * sent. Deletion succeeds because missing alert is not treated as an error.
  */
 TEST_F(AlertsTest, RemoveStorageBeforeAlarmIsSet) {
     m_alertStorage->close();
@@ -1006,8 +1028,8 @@ TEST_F(AlertsTest, RemoveStorageBeforeAlarmIsSet) {
             sendParams = m_avsConnectionManager->waitForNext(WAIT_FOR_TIMEOUT_DURATION);
         }
     }
-    // DeleteAlertFailed is sent.
-    ASSERT_TRUE(checkSentEventName(sendParams, NAME_DELETE_ALERT_FAILED));
+    // Missing alert is not treated as an error, DeleteAlertSucceeded is sent.
+    ASSERT_TRUE(checkSentEventName(sendParams, NAME_DELETE_ALERT_SUCCEEDED));
 
     ASSERT_EQ(
         m_testContentClient->waitForFocusChange(WAIT_FOR_TIMEOUT_DURATION, &focusChanged), FocusState::BACKGROUND);
@@ -1200,7 +1222,7 @@ TEST_F(AlertsTest, UserSpeakingWhenAlertShouldBeActive) {
 
     // Put audio onto the SDS saying "Tell me a joke".
     bool error = false;
-    std::string file = inputPath + RECOGNIZE_WEATHER_AUDIO_FILE_NAME;
+    std::string file = g_inputPath + RECOGNIZE_WEATHER_AUDIO_FILE_NAME;
     std::vector<int16_t> audioData = readAudioFromFile(file, &error);
     ASSERT_FALSE(error);
     ASSERT_FALSE(audioData.empty());
@@ -1319,8 +1341,8 @@ int main(int argc, char** argv) {
         return 1;
 
     } else {
-        alexaClientSDK::integration::test::configPath = std::string(argv[1]);
-        alexaClientSDK::integration::test::inputPath = std::string(argv[2]);
+        alexaClientSDK::integration::test::g_configPath = std::string(argv[1]);
+        alexaClientSDK::integration::test::g_inputPath = std::string(argv[2]);
         return RUN_ALL_TESTS();
     }
 }

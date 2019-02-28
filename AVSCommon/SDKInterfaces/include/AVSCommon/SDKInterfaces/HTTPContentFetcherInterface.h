@@ -1,7 +1,5 @@
 /*
- * HTTPContentFetcherInterface.h
- *
- * Copyright 2016-2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright 2017-2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License").
  * You may not use this file except in compliance with the License.
@@ -21,6 +19,7 @@
 #include <memory>
 
 #include <AVSCommon/Utils/HTTPContent.h>
+#include <AVSCommon/Utils/SDKVersion.h>
 
 namespace alexaClientSDK {
 namespace avsCommon {
@@ -49,10 +48,24 @@ public:
      * This function retrieves content from a remote location. No thread safety is guaranteed.
      *
      * @param option Flag indicating desired content.
+     * @param writer An optional writer parameter to be used when writing to an external stream.
      * @return A new @c HTTPContent object or @c nullptr if a failure occured.
      */
-    virtual std::unique_ptr<avsCommon::utils::HTTPContent> getContent(FetchOptions option) = 0;
+    virtual std::unique_ptr<avsCommon::utils::HTTPContent> getContent(
+        FetchOptions option,
+        std::shared_ptr<avsCommon::avs::attachment::AttachmentWriter> writer = nullptr) = 0;
+
+    /**
+     * Returns a string that represents the User-Agent to be used in HTTP requests.
+     *
+     * @return User-Agent string to be used in HTTP requests.
+     */
+    inline static std::string getUserAgent();
 };
+
+std::string HTTPContentFetcherInterface::getUserAgent() {
+    return "AvsDeviceSdk/" + utils::sdkVersion::getCurrentVersion();
+}
 
 }  // namespace sdkInterfaces
 }  // namespace avsCommon

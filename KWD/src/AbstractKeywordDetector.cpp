@@ -1,7 +1,5 @@
 /*
- * AbstractKeywordDetector.cpp
- *
- * Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright 2017-2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License").
  * You may not use this file except in compliance with the License.
@@ -70,10 +68,11 @@ void AbstractKeywordDetector::notifyKeyWordObservers(
     std::shared_ptr<AudioInputStream> stream,
     std::string keyword,
     AudioInputStream::Index beginIndex,
-    AudioInputStream::Index endIndex) const {
+    AudioInputStream::Index endIndex,
+    std::shared_ptr<const std::vector<char>> KWDMetadata) const {
     std::lock_guard<std::mutex> lock(m_keyWordObserversMutex);
     for (auto keyWordObserver : m_keyWordObservers) {
-        keyWordObserver->onKeyWordDetected(stream, keyword, beginIndex, endIndex);
+        keyWordObserver->onKeyWordDetected(stream, keyword, beginIndex, endIndex, KWDMetadata);
     }
 }
 

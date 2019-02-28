@@ -1,7 +1,5 @@
 /*
- * AlexaDirectiveSequencerLibraryTest.cpp
- *
- * Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright 2017-2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License").
  * You may not use this file except in compliance with the License.
@@ -16,43 +14,39 @@
  */
 
 /// @file AlexaDirectiveSequencerLibraryTest.cpp
-#include <gtest/gtest.h>
-#include <gmock/gmock.h>
-#include <string>
-#include <future>
-#include <fstream>
+
 #include <chrono>
 #include <deque>
+#include <future>
+#include <fstream>
 #include <mutex>
+#include <string>
 #include <unordered_map>
 
-#include "ACL/AVSConnectionManager.h"
-#include "ACL/Transport/HTTP2MessageRouter.h"
-#include "ACL/Transport/PostConnectObject.h"
-#include <ContextManager/ContextManager.h>
-#include "AVSCommon/AVS/BlockingPolicy.h"
-#include "ADSL/DirectiveSequencer.h"
-#include "ADSL/MessageInterpreter.h"
-#include "AuthDelegate/AuthDelegate.h"
-#include "AVSCommon/AVS/Attachment/AttachmentManager.h"
-#include "AVSCommon/AVS/Attachment/InProcessAttachmentWriter.h"
-#include "AVSCommon/AVS/Attachment/InProcessAttachmentReader.h"
-#include "AVSCommon/AVS/EventBuilder.h"
-#include "AVSCommon/SDKInterfaces/ExceptionEncounteredSenderInterface.h"
-#include "AVSCommon/SDKInterfaces/DirectiveHandlerInterface.h"
-#include "AVSCommon/SDKInterfaces/DirectiveHandlerResultInterface.h"
-#include "AVSCommon/Utils/JSON/JSONUtils.h"
-#include "AVSCommon/AVS/Initialization/AlexaClientSDKInit.h"
-#include "AVSCommon/Utils/Logger/Logger.h"
-#include "Integration/AuthObserver.h"
-#include "Integration/ClientMessageHandler.h"
-#include "Integration/ConnectionStatusObserver.h"
-#include "Integration/ObservableMessageRequest.h"
-#include "Integration/TestDirectiveHandler.h"
-#include "Integration/TestExceptionEncounteredSender.h"
+#include <gtest/gtest.h>
+#include <gmock/gmock.h>
+
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
 #include <rapidjson/error/en.h>
+
+#include <ACL/AVSConnectionManager.h>
+#include <ADSL/DirectiveSequencer.h>
+#include <ADSL/MessageInterpreter.h>
+#include <AVSCommon/AVS/Attachment/InProcessAttachmentReader.h>
+#include <AVSCommon/AVS/Attachment/InProcessAttachmentWriter.h>
+#include <AVSCommon/AVS/BlockingPolicy.h>
+#include <AVSCommon/AVS/EventBuilder.h>
+#include <AVSCommon/SDKInterfaces/DirectiveHandlerInterface.h>
+#include <AVSCommon/SDKInterfaces/DirectiveHandlerResultInterface.h>
+#include <AVSCommon/SDKInterfaces/ExceptionEncounteredSenderInterface.h>
+#include <AVSCommon/Utils/JSON/JSONUtils.h>
+#include <AVSCommon/Utils/Logger/Logger.h>
+
+#include "Integration/ACLTestContext.h"
+#include "Integration/ObservableMessageRequest.h"
+#include "Integration/TestDirectiveHandler.h"
+#include "Integration/TestExceptionEncounteredSender.h"
 
 namespace alexaClientSDK {
 namespace integration {
@@ -60,12 +54,10 @@ namespace test {
 
 using namespace acl;
 using namespace adsl;
-using namespace authDelegate;
 using namespace avsCommon;
 using namespace avsCommon::avs;
-using namespace avsCommon::sdkInterfaces;
-using namespace avsCommon::avs::initialization;
 using namespace avsCommon::avs::attachment;
+using namespace avsCommon::sdkInterfaces;
 using namespace avsCommon::utils::sds;
 using namespace avsCommon::utils::json;
 using namespace rapidjson;
@@ -156,6 +148,8 @@ static const std::string RECOGNIZE_LIONS_AUDIO_FILE_NAME = "/recognize_lions_tes
 static const std::string RECOGNIZE_WHATS_UP_AUDIO_FILE_NAME = "/recognize_whats_up_test.wav";
 /// This is a 16 bit 16 kHz little endian linear PCM audio file of "Set a timer for 5 seconds" to be recognized.
 static const std::string RECOGNIZE_TIMER_AUDIO_FILE_NAME = "/recognize_timer_test.wav";
+/// This is a 16 bit 16 kHz little endian linear PCM audio file of "flashbriefing" to be recognized.
+static const std::string RECOGNIZE_FLASHBRIEFING_AUDIO_FILE_NAME = "/recognize_flashbriefing_test.wav";
 
 // String to be used as a basic DialogRequestID.
 #define FIRST_DIALOG_REQUEST_ID "DialogRequestID123"
@@ -231,68 +225,60 @@ static const std::string JSON_MESSAGE_TOKEN_KEY = "token";
 /// JSON key to add to the payload object of a message.
 static const char TOKEN_KEY[] = "token";
 
-/// Path to configuration file (from command line arguments).
-std::string configPath;
-/// Path to directory containing input data (from command line arguments).
-std::string inputPath;
+/// Path to the AlexaClientSDKConfig.json file (from command line arguments).
+static std::string g_configPath;
+/// Path to resources (e.g. audio files) for tests (from command line arguments).
+static std::string g_inputPath;
 
 class AlexaDirectiveSequencerLibraryTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        std::ifstream infile(configPath);
-        ASSERT_TRUE(infile.good());
-        ASSERT_TRUE(AlexaClientSDKInit::initialize({&infile}));
+        m_context = ACLTestContext::create(g_configPath);
+        ASSERT_TRUE(m_context);
 
-        m_authObserver = std::make_shared<AuthObserver>();
-        m_authDelegate = AuthDelegate::create();
-        m_authDelegate->addAuthObserver(m_authObserver);
-        m_attachmentManager = std::make_shared<avsCommon::avs::attachment::AttachmentManager>(
-            AttachmentManager::AttachmentType::IN_PROCESS);
-        m_connectionStatusObserver = std::make_shared<ConnectionStatusObserver>();
-        m_clientMessageHandler = std::make_shared<ClientMessageHandler>(m_attachmentManager);
-        bool isEnabled = false;
-        m_messageRouter = std::make_shared<HTTP2MessageRouter>(m_authDelegate, m_attachmentManager);
         m_exceptionEncounteredSender = std::make_shared<TestExceptionEncounteredSender>();
         m_directiveSequencer = DirectiveSequencer::create(m_exceptionEncounteredSender);
         m_messageInterpreter = std::make_shared<MessageInterpreter>(
-            m_exceptionEncounteredSender, m_directiveSequencer, m_attachmentManager);
-
-        m_contextManager = contextManager::ContextManager::create();
-        ASSERT_NE(m_contextManager, nullptr);
-        PostConnectObject::init(m_contextManager);
+            m_exceptionEncounteredSender, m_directiveSequencer, m_context->getAttachmentManager());
 
         // note: No DirectiveHandlers have been registered with the DirectiveSequencer yet. Registration of
         // handlers is deferred to individual test implementations.
 
         m_avsConnectionManager = AVSConnectionManager::create(
-            m_messageRouter, isEnabled, {m_connectionStatusObserver}, {m_messageInterpreter});
+            m_context->getMessageRouter(), false, {m_context->getConnectionStatusObserver()}, {m_messageInterpreter});
+        ASSERT_TRUE(m_avsConnectionManager);
+
         connect();
     }
 
     void TearDown() override {
         disconnect();
-        m_directiveSequencer->shutdown();
-        m_avsConnectionManager->shutdown();
-        AlexaClientSDKInit::uninitialize();
+        // Note that these nullptr checks are needed to avoid segaults if @c SetUp() failed.
+        if (m_directiveSequencer) {
+            m_directiveSequencer->shutdown();
+        }
+        if (m_avsConnectionManager) {
+            m_avsConnectionManager->shutdown();
+        }
+        m_context.reset();
     }
 
     /**
      * Connect to AVS.
      */
     void connect() {
-        ASSERT_TRUE(m_authObserver->waitFor(AuthObserver::State::REFRESHED)) << "Retrieving the auth token timed out.";
         m_avsConnectionManager->enable();
-        ASSERT_TRUE(m_connectionStatusObserver->waitFor(ConnectionStatusObserverInterface::Status::CONNECTED))
-            << "Connecting timed out.";
+        m_context->waitForConnected();
     }
 
     /**
      * Disconnect from AVS.
      */
     void disconnect() {
-        m_avsConnectionManager->disable();
-        ASSERT_TRUE(m_connectionStatusObserver->waitFor(ConnectionStatusObserverInterface::Status::DISCONNECTED))
-            << "Connecting timed out.";
+        if (m_avsConnectionManager) {
+            m_avsConnectionManager->disable();
+            m_context->waitForDisconnected();
+        }
     }
 
     /**
@@ -368,7 +354,7 @@ protected:
         attachmentWriter->close();
 
         std::shared_ptr<InProcessAttachmentReader> attachmentReader =
-            InProcessAttachmentReader::create(AttachmentReader::Policy::NON_BLOCKING, sds);
+            InProcessAttachmentReader::create(ReaderPolicy::NONBLOCKING, sds);
         ASSERT_NE(attachmentReader, nullptr);
 
         sendEvent(json, attachmentReader, expectedStatus, std::chrono::seconds(timeout));
@@ -419,23 +405,8 @@ protected:
         sendEvent(event.second, nullptr, expectedStatus, std::chrono::seconds(SEND_EVENT_TIMEOUT_DURATION));
     }
 
-    /// Object to monitor the status of the authorization to communicate with @c AVS.
-    std::shared_ptr<AuthObserver> m_authObserver;
-
-    /// Object to acquire authorization to communicate with @c AVS.
-    std::shared_ptr<AuthDelegate> m_authDelegate;
-
-    /// Object to acquire SDK context.
-    std::shared_ptr<contextManager::ContextManager> m_contextManager;
-
-    /// The Attachment Manager.
-    std::shared_ptr<avsCommon::avs::attachment::AttachmentManager> m_attachmentManager;
-
-    /// Object to monitor the status of the connection with @c AVS.
-    std::shared_ptr<ConnectionStatusObserver> m_connectionStatusObserver;
-
-    /// Object that routs messages from @c AVS.
-    std::shared_ptr<MessageRouter> m_messageRouter;
+    /// Context for running ACL based tests.
+    std::unique_ptr<ACLTestContext> m_context;
 
     /// Object that manages the connection to @c AVS.
     std::shared_ptr<AVSConnectionManager> m_avsConnectionManager;
@@ -445,9 +416,6 @@ protected:
 
     /// Object to convert messages from @c AVS in to directives passed to the @c DirectiveSequencer.
     std::shared_ptr<MessageInterpreter> m_messageInterpreter;
-
-    /// Object to proxy messages from AVS to the @c MessageInterpreter.
-    std::shared_ptr<ClientMessageHandler> m_clientMessageHandler;
 
     std::shared_ptr<TestExceptionEncounteredSender> m_exceptionEncounteredSender;
 };
@@ -485,7 +453,7 @@ TEST_F(AlexaDirectiveSequencerLibraryTest, sendEventWithDirective) {
 
     // Send audio of "Joke" that will prompt SetMute and Speak.
     m_directiveSequencer->setDialogRequestId(FIRST_DIALOG_REQUEST_ID);
-    std::string file = inputPath + RECOGNIZE_JOKE_AUDIO_FILE_NAME;
+    std::string file = g_inputPath + RECOGNIZE_JOKE_AUDIO_FILE_NAME;
     setupMessageWithAttachmentAndSend(
         CT_FIRST_RECOGNIZE_EVENT_JSON,
         file,
@@ -515,7 +483,7 @@ TEST_F(AlexaDirectiveSequencerLibraryTest, sendDirectiveGroupWithoutBlocking) {
 
     // Send audio of "Joke" that will prompt SetMute and Speak.
     m_directiveSequencer->setDialogRequestId(FIRST_DIALOG_REQUEST_ID);
-    std::string file = inputPath + RECOGNIZE_JOKE_AUDIO_FILE_NAME;
+    std::string file = g_inputPath + RECOGNIZE_JOKE_AUDIO_FILE_NAME;
     setupMessageWithAttachmentAndSend(
         CT_FIRST_RECOGNIZE_EVENT_JSON,
         file,
@@ -560,7 +528,7 @@ TEST_F(AlexaDirectiveSequencerLibraryTest, sendDirectiveWithDifferentDialogReque
 
     // Send audio for a flashbriefing which will send back at least SetMute, Speak, SetMute, Play and Play.
     m_directiveSequencer->setDialogRequestId(FIRST_DIALOG_REQUEST_ID);
-    std::string file = inputPath + RECOGNIZE_WHATS_UP_AUDIO_FILE_NAME;
+    std::string file = g_inputPath + RECOGNIZE_WHATS_UP_AUDIO_FILE_NAME;
     setupMessageWithAttachmentAndSend(
         CT_FIRST_RECOGNIZE_EVENT_JSON,
         file,
@@ -575,7 +543,7 @@ TEST_F(AlexaDirectiveSequencerLibraryTest, sendDirectiveWithDifferentDialogReque
     } while (!params.isTimeout());
 
     // Send an event that has a different dialogRequestID, without calling setDialogRequestId().
-    file = inputPath + RECOGNIZE_JOKE_AUDIO_FILE_NAME;
+    file = g_inputPath + RECOGNIZE_JOKE_AUDIO_FILE_NAME;
     setupMessageWithAttachmentAndSend(
         CT_SECOND_RECOGNIZE_EVENT_JSON,
         file,
@@ -609,7 +577,7 @@ TEST_F(AlexaDirectiveSequencerLibraryTest, dropQueueAfterBargeIn) {
 
     // Send audio for a flashbriefing which will send back (at least) SetMute, Speak, SetMute, Play and Play.
     m_directiveSequencer->setDialogRequestId(FIRST_DIALOG_REQUEST_ID);
-    std::string file = inputPath + RECOGNIZE_WHATS_UP_AUDIO_FILE_NAME;
+    std::string file = g_inputPath + RECOGNIZE_WHATS_UP_AUDIO_FILE_NAME;
     setupMessageWithAttachmentAndSend(
         CT_FIRST_RECOGNIZE_EVENT_JSON,
         file,
@@ -627,7 +595,7 @@ TEST_F(AlexaDirectiveSequencerLibraryTest, dropQueueAfterBargeIn) {
 
     // Call setDialogRequestId(), canceling the previous group. Then send a new event with the new dialogRequestId.
     m_directiveSequencer->setDialogRequestId(SECOND_DIALOG_REQUEST_ID);
-    std::string differentFile = inputPath + RECOGNIZE_JOKE_AUDIO_FILE_NAME;
+    std::string differentFile = g_inputPath + RECOGNIZE_JOKE_AUDIO_FILE_NAME;
     setupMessageWithAttachmentAndSend(
         CT_SECOND_RECOGNIZE_EVENT_JSON,
         differentFile,
@@ -671,7 +639,7 @@ TEST_F(AlexaDirectiveSequencerLibraryTest, sendDirectiveWithoutADialogRequestID)
 
     // Send audio of "Set a timer for 5 seconds" that will prompt a Speak.
     m_directiveSequencer->setDialogRequestId(FIRST_DIALOG_REQUEST_ID);
-    std::string file = inputPath + RECOGNIZE_TIMER_AUDIO_FILE_NAME;
+    std::string file = g_inputPath + RECOGNIZE_TIMER_AUDIO_FILE_NAME;
 
     setupMessageWithAttachmentAndSend(
         CT_FIRST_RECOGNIZE_EVENT_JSON,
@@ -752,7 +720,7 @@ TEST_F(AlexaDirectiveSequencerLibraryTest, sendDirectivesForPreHandling) {
 
     // Send audio for a flashbriefing which will send back SetMute, Speak, SetMute, Play and Play.
     m_directiveSequencer->setDialogRequestId(FIRST_DIALOG_REQUEST_ID);
-    std::string file = inputPath + RECOGNIZE_WHATS_UP_AUDIO_FILE_NAME;
+    std::string file = g_inputPath + RECOGNIZE_WHATS_UP_AUDIO_FILE_NAME;
     setupMessageWithAttachmentAndSend(
         CT_FIRST_RECOGNIZE_EVENT_JSON,
         file,
@@ -796,7 +764,7 @@ TEST_F(AlexaDirectiveSequencerLibraryTest, cancelDirectivesWhileInQueue) {
 
     // Send audio for a flashbriefing which will send back (at least) SetMute, Speak, SetMute, Play, and Play.
     m_directiveSequencer->setDialogRequestId(FIRST_DIALOG_REQUEST_ID);
-    std::string file = inputPath + RECOGNIZE_WHATS_UP_AUDIO_FILE_NAME;
+    std::string file = g_inputPath + RECOGNIZE_WHATS_UP_AUDIO_FILE_NAME;
     setupMessageWithAttachmentAndSend(
         CT_FIRST_RECOGNIZE_EVENT_JSON,
         file,
@@ -840,7 +808,7 @@ TEST_F(AlexaDirectiveSequencerLibraryTest, oneBlockingDirectiveAtTheFront) {
 
     // Send audio of "Joke" that will prompt a stream of directives including SetMute.
     m_directiveSequencer->setDialogRequestId(FIRST_DIALOG_REQUEST_ID);
-    std::string file = inputPath + RECOGNIZE_JOKE_AUDIO_FILE_NAME;
+    std::string file = g_inputPath + RECOGNIZE_JOKE_AUDIO_FILE_NAME;
     setupMessageWithAttachmentAndSend(
         CT_FIRST_RECOGNIZE_EVENT_JSON,
         file,
@@ -902,7 +870,7 @@ TEST_F(AlexaDirectiveSequencerLibraryTest, oneBlockingDirectiveInTheMiddle) {
 
     // Send audio for a flashbriefing which will send back SetMute, Speak, SetMute, Play and Play.
     m_directiveSequencer->setDialogRequestId(FIRST_DIALOG_REQUEST_ID);
-    std::string file = inputPath + RECOGNIZE_WHATS_UP_AUDIO_FILE_NAME;
+    std::string file = g_inputPath + RECOGNIZE_FLASHBRIEFING_AUDIO_FILE_NAME;
     setupMessageWithAttachmentAndSend(
         CT_FIRST_RECOGNIZE_EVENT_JSON,
         file,
@@ -957,7 +925,7 @@ TEST_F(AlexaDirectiveSequencerLibraryTest, noDirectiveHandlerRegisteredForADirec
 
     // Send audio of "Joke" that will trigger SetMute and possibly others.
     m_directiveSequencer->setDialogRequestId(FIRST_DIALOG_REQUEST_ID);
-    std::string file = inputPath + RECOGNIZE_JOKE_AUDIO_FILE_NAME;
+    std::string file = g_inputPath + RECOGNIZE_JOKE_AUDIO_FILE_NAME;
     setupMessageWithAttachmentAndSend(
         CT_FIRST_RECOGNIZE_EVENT_JSON,
         file,
@@ -985,7 +953,7 @@ TEST_F(AlexaDirectiveSequencerLibraryTest, noDirectiveHandlerRegisteredForADirec
 
     // Send audio of "Joke" that will trigger SetMute and speak.
     m_directiveSequencer->setDialogRequestId(FIRST_DIALOG_REQUEST_ID);
-    std::string file = inputPath + RECOGNIZE_JOKE_AUDIO_FILE_NAME;
+    std::string file = g_inputPath + RECOGNIZE_JOKE_AUDIO_FILE_NAME;
     setupMessageWithAttachmentAndSend(
         CT_FIRST_RECOGNIZE_EVENT_JSON,
         file,
@@ -1020,7 +988,7 @@ TEST_F(AlexaDirectiveSequencerLibraryTest, twoDirectiveHandlersRegisteredForADir
 
     // Send audio of "Joke" that will prompt SetMute.
     m_directiveSequencer->setDialogRequestId(FIRST_DIALOG_REQUEST_ID);
-    std::string file = inputPath + RECOGNIZE_JOKE_AUDIO_FILE_NAME;
+    std::string file = g_inputPath + RECOGNIZE_JOKE_AUDIO_FILE_NAME;
     setupMessageWithAttachmentAndSend(
         CT_FIRST_RECOGNIZE_EVENT_JSON,
         file,
@@ -1058,7 +1026,7 @@ TEST_F(AlexaDirectiveSequencerLibraryTest, multiturnScenario) {
 
     // Send audio of "wikipedia" which will prompt a SetMute, a Speak, and an ExpectSpeech.
     m_directiveSequencer->setDialogRequestId(FIRST_DIALOG_REQUEST_ID);
-    std::string file = inputPath + RECOGNIZE_WIKI_AUDIO_FILE_NAME;
+    std::string file = g_inputPath + RECOGNIZE_WIKI_AUDIO_FILE_NAME;
     setupMessageWithAttachmentAndSend(
         CT_FIRST_RECOGNIZE_EVENT_JSON,
         file,
@@ -1079,7 +1047,7 @@ TEST_F(AlexaDirectiveSequencerLibraryTest, multiturnScenario) {
 
     // Send back a recognize event.
     m_directiveSequencer->setDialogRequestId(SECOND_DIALOG_REQUEST_ID);
-    std::string differentFile = inputPath + RECOGNIZE_LIONS_AUDIO_FILE_NAME;
+    std::string differentFile = g_inputPath + RECOGNIZE_LIONS_AUDIO_FILE_NAME;
     setupMessageWithAttachmentAndSend(
         CT_SECOND_RECOGNIZE_EVENT_JSON,
         differentFile,
@@ -1109,7 +1077,7 @@ TEST_F(AlexaDirectiveSequencerLibraryTest, getAttachmentWithContentId) {
 
     // Send audio of "Joke" that will prompt SetMute and Speak.
     m_directiveSequencer->setDialogRequestId(FIRST_DIALOG_REQUEST_ID);
-    std::string file = inputPath + RECOGNIZE_JOKE_AUDIO_FILE_NAME;
+    std::string file = g_inputPath + RECOGNIZE_JOKE_AUDIO_FILE_NAME;
     setupMessageWithAttachmentAndSend(
         CT_FIRST_RECOGNIZE_EVENT_JSON,
         file,
@@ -1133,7 +1101,7 @@ TEST_F(AlexaDirectiveSequencerLibraryTest, getAttachmentWithContentId) {
     ASSERT_TRUE(stringIndex != payloadUrl.size() - 1);
 
     auto contentId = payloadUrl.substr(payloadUrl.find(':') + 1);
-    auto attachmentReader = directive->getAttachmentReader(contentId, AttachmentReader::Policy::BLOCKING);
+    auto attachmentReader = directive->getAttachmentReader(contentId, ReaderPolicy::BLOCKING);
 
     ASSERT_NE(attachmentReader, nullptr);
 }
@@ -1148,10 +1116,9 @@ int main(int argc, char** argv) {
         std::cerr << "USAGE: " << std::string(argv[0]) << " <path_to_AlexaClientSDKConfig.json> <path_to_inputs_folder>"
                   << std::endl;
         return 1;
-
     } else {
-        alexaClientSDK::integration::test::configPath = std::string(argv[1]);
-        alexaClientSDK::integration::test::inputPath = std::string(argv[2]);
+        alexaClientSDK::integration::test::g_configPath = std::string(argv[1]);
+        alexaClientSDK::integration::test::g_inputPath = std::string(argv[2]);
         return RUN_ALL_TESTS();
     }
 }

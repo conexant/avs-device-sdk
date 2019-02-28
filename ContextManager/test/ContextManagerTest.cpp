@@ -1,7 +1,5 @@
 /*
- * ContextManagerTest.cpp
- *
- * Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright 2017-2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License").
  * You may not use this file except in compliance with the License.
@@ -14,6 +12,8 @@
  * express or implied. See the License for the specific language governing
  * permissions and limitations under the License.
  */
+
+#include <AVSCommon/Utils/Logger/Logger.h>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
@@ -28,6 +28,16 @@ namespace test {
 using namespace avsCommon;
 using namespace avsCommon::avs;
 using namespace avsCommon::sdkInterfaces;
+
+/// String to identify log entries originating from this file.
+static const std::string TAG("ContextManagerTest");
+
+/**
+ * Create a LogEntry using this file's TAG and the specified event string.
+ *
+ * @param The event string for this @c LogEntry.
+ */
+#define LX(event) alexaClientSDK::avsCommon::utils::logger::LogEntry(TAG, event)
 
 /// Payload for SpeechSynthesizer state when it is playing back audio.
 static const std::string SPEECH_SYNTHESIZER_PAYLOAD_PLAYING =
@@ -113,7 +123,7 @@ static const std::chrono::milliseconds TIMEOUT_SLEEP_TIME = std::chrono::millise
 static const std::chrono::milliseconds DEFAULT_TIMEOUT = std::chrono::milliseconds(50);
 
 /// Timeout for the @c ContextRequester to get the failure.
-static const std::chrono::milliseconds FAILURE_TIMEOUT = std::chrono::milliseconds(110);
+static const std::chrono::milliseconds FAILURE_TIMEOUT = std::chrono::milliseconds(220);
 
 /// Namespace for SpeechSynthesizer.
 static const std::string NAMESPACE_SPEECH_SYNTHESIZER("SpeechSynthesizer");
@@ -141,6 +151,9 @@ static const NamespaceAndName AUDIO_PLAYER(NAMESPACE_AUDIO_PLAYER, NAME_PLAYBACK
 
 /// Alerts namespace and name
 static const NamespaceAndName ALERTS(NAMESPACE_ALERTS, NAME_ALERTS_STATE);
+
+/// Dummy provider namespace and name
+static const NamespaceAndName DUMMY_PROVIDER("Dummy", "DummyName");
 
 /**
  * @c MockContextRequester used to verify @c ContextManager behavior.
@@ -191,6 +204,13 @@ public:
      */
     std::string& getContextString();
 
+    /**
+     * Function to read check context string JSON against the reference context JSON with unordered states.
+     *
+     * @return  @c true if both JSON context strings are equivalent, else @c false.
+     */
+    bool checkContextString(const std::string& a, const std::string& b);
+
 private:
     /// Instance of @ ContextManager
     std::shared_ptr<ContextManager> m_contextManager;
@@ -215,6 +235,14 @@ private:
 
     /// String to hold the context returned by the @c ContextManager.
     std::string m_context;
+
+    /**
+     * Function to convert a JSON object to string.
+     *
+     *@param documentNode the JSON object.
+     *@return  the serialized JSON string
+     */
+    std::string serializeJSONObjectToString(const rapidjson::Value& documentNode);
 };
 
 std::shared_ptr<MockContextRequester> MockContextRequester::create(std::shared_ptr<ContextManager> contextManager) {
@@ -264,6 +292,83 @@ std::string& MockContextRequester::getContextString() {
     return m_context;
 }
 
+std::string MockContextRequester::serializeJSONObjectToString(const rapidjson::Value& documentNode) {
+    if (!documentNode.IsObject()) {
+        ACSDK_ERROR(LX("serializeJSONObjectToStringFailed")
+                        .d("reason", "invalidType")
+                        .d("expectedType", rapidjson::Type::kObjectType)
+                        .d("type", documentNode.GetType()));
+        return "";
+    }
+
+    rapidjson::StringBuffer stringBuffer;
+    rapidjson::Writer<rapidjson::StringBuffer> writer(stringBuffer);
+
+    if (!documentNode.Accept(writer)) {
+        ACSDK_ERROR(LX("serializeJSONObjectToStringFailed").d("reason", "acceptFailed").d("handler", "Writer"));
+        return "";
+    }
+
+    return stringBuffer.GetString();
+}
+bool MockContextRequester::checkContextString(const std::string& a, const std::string& b) {
+    rapidjson::Document ajson;
+    rapidjson::Document bjson;
+    const char contextstr[] = "context";
+
+    ajson.Parse(a.c_str());
+    if (!ajson.HasMember(contextstr)) {
+        ACSDK_ERROR(LX("checkContextStringFailed").d("reason", "invalidContextString").d("json", a));
+        return false;
+    }
+
+    bjson.Parse(b.c_str());
+    if (!bjson.HasMember(contextstr)) {
+        ACSDK_ERROR(LX("checkContextStringFailed").d("reason", "invalidContextString").d("json", b));
+        return false;
+    }
+
+    const rapidjson::Value& acontext = ajson[contextstr];
+    const rapidjson::Value& bcontext = bjson[contextstr];
+
+    if (!acontext.IsArray()) {
+        ACSDK_ERROR(LX("checkContextStringFailed").d("reason", "invalidContextString").d("json", a));
+        return false;
+    }
+
+    if (!bcontext.IsArray()) {
+        ACSDK_ERROR(LX("checkContextStringFailed").d("reason", "invalidContextString").d("json", b));
+        return false;
+    }
+
+    if (acontext.Size() != bcontext.Size()) {
+        ACSDK_ERROR(LX("checkContextStringFailed").d("reason", "contextStringNotMatched").d("value", a).d("ref", b));
+        return false;
+    }
+
+    for (rapidjson::Value::ConstValueIterator itr = acontext.Begin(); itr != acontext.End(); ++itr) {
+        bool entryMatch = false;
+        std::string aconstring;
+        aconstring = serializeJSONObjectToString(*itr);
+
+        for (rapidjson::Value::ConstValueIterator itr2 = bcontext.Begin(); itr2 != bcontext.End(); ++itr2) {
+            std::string bconstring;
+
+            bconstring = serializeJSONObjectToString(*itr);
+            if (aconstring == bconstring) {
+                entryMatch = true;
+                break;
+            }
+        }
+        if (!entryMatch) {
+            ACSDK_ERROR(
+                LX("checkContextStringFailed").d("reason", "contextStringNotMatched").d("value", a).d("ref", b));
+            return false;
+        }
+    }
+
+    return true;
+}
 /**
  * @c MockStateProvider used to verify @c ContextManager behavior.
  */
@@ -644,6 +749,44 @@ TEST_F(ContextManagerTest, testIncorrectToken) {
             SPEECH_SYNTHESIZER_PAYLOAD_PLAYING,
             StateRefreshPolicy::ALWAYS,
             m_speechSynthesizer->getCurrentstateRequestToken() + 1));
+}
+
+/**
+ * Set the states with a @c StateRefreshPolicy @c ALWAYS for @c StateProviderInterfaces that are registered with the
+ * @c ContextManager. Request for context by calling @c getContext. Expect that the context is returned within the
+ * timeout period.
+ *
+ * There's a dummyProvider with StateRefreshPolicy @c SOMETIMES that returns an empty context.  Check ContextManager is
+ * okay with it and would include the context provided by the dummyProvider.
+ *
+ * Check the context that is returned by the @c ContextManager. Expect it should match the test value.
+ */
+TEST_F(ContextManagerTest, testEmptyProvider) {
+    auto dummyProvider = MockStateProvider::create(
+        m_contextManager, DUMMY_PROVIDER, "", StateRefreshPolicy::SOMETIMES, DEFAULT_SLEEP_TIME);
+    m_contextManager->setStateProvider(DUMMY_PROVIDER, dummyProvider);
+
+    ASSERT_EQ(
+        SetStateResult::SUCCESS,
+        m_contextManager->setState(
+            SPEECH_SYNTHESIZER,
+            SPEECH_SYNTHESIZER_PAYLOAD_PLAYING,
+            StateRefreshPolicy::ALWAYS,
+            m_speechSynthesizer->getCurrentstateRequestToken()));
+    ASSERT_EQ(
+        SetStateResult::SUCCESS,
+        m_contextManager->setState(
+            AUDIO_PLAYER,
+            AUDIO_PLAYER_PAYLOAD,
+            StateRefreshPolicy::ALWAYS,
+            m_audioPlayer->getCurrentstateRequestToken()));
+    ASSERT_EQ(
+        SetStateResult::SUCCESS,
+        m_contextManager->setState(
+            DUMMY_PROVIDER, "", StateRefreshPolicy::ALWAYS, dummyProvider->getCurrentstateRequestToken()));
+    m_contextManager->getContext(m_contextRequester);
+    ASSERT_TRUE(m_contextRequester->waitForContext(DEFAULT_TIMEOUT));
+    ASSERT_TRUE(m_contextRequester->checkContextString(CONTEXT_TEST, m_contextRequester->getContextString()));
 }
 
 }  // namespace test

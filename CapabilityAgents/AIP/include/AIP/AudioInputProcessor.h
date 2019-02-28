@@ -1,7 +1,5 @@
 /*
- * AudioInputProcessor.h
- *
- * Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright 2017-2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License").
  * You may not use this file except in compliance with the License.
@@ -18,11 +16,15 @@
 #ifndef ALEXA_CLIENT_SDK_CAPABILITYAGENTS_AIP_INCLUDE_AIP_AUDIOINPUTPROCESSOR_H_
 #define ALEXA_CLIENT_SDK_CAPABILITYAGENTS_AIP_INCLUDE_AIP_AUDIOINPUTPROCESSOR_H_
 
+#include <chrono>
 #include <memory>
 #include <unordered_set>
+#include <vector>
 
 #include <AVSCommon/AVS/Attachment/InProcessAttachmentReader.h>
 #include <AVSCommon/AVS/CapabilityAgent.h>
+#include <AVSCommon/AVS/CapabilityConfiguration.h>
+#include <AVSCommon/SDKInterfaces/CapabilityConfigurationInterface.h>
 #include <AVSCommon/AVS/DirectiveHandlerConfiguration.h>
 #include <AVSCommon/AVS/DialogUXStateAggregator.h>
 #include <AVSCommon/SDKInterfaces/AudioInputProcessorObserverInterface.h>
@@ -34,11 +36,12 @@
 #include <AVSCommon/SDKInterfaces/FocusManagerInterface.h>
 #include <AVSCommon/SDKInterfaces/MessageRequestObserverInterface.h>
 #include <AVSCommon/SDKInterfaces/MessageSenderInterface.h>
-#include <AVSCommon/SDKInterfaces/UserActivityNotifierInterface.h>
+#include <AVSCommon/SDKInterfaces/UserInactivityMonitorInterface.h>
 #include <AVSCommon/Utils/RequiresShutdown.h>
 #include <AVSCommon/Utils/Threading/Executor.h>
 #include <AVSCommon/Utils/Timing/Timer.h>
 #include "AudioProvider.h"
+#include "ESPData.h"
 #include "Initiator.h"
 
 namespace alexaClientSDK {
@@ -59,6 +62,7 @@ namespace aip {
  */
 class AudioInputProcessor
         : public avsCommon::avs::CapabilityAgent
+        , public avsCommon::sdkInterfaces::CapabilityConfigurationInterface
         , public avsCommon::sdkInterfaces::DialogUXStateObserverInterface
         , public avsCommon::sdkInterfaces::MessageRequestObserverInterface
         , public avsCommon::utils::RequiresShutdown
@@ -79,7 +83,7 @@ public:
      * @param focusManager The channel focus manager used to manage usage of the dialog channel.
      * @param dialogUXStateAggregator The dialog state aggregator which tracks UX states related to dialog.
      * @param exceptionEncounteredSender The object to use for sending AVS Exception messages.
-     * @param userActivityNotifier The object to use for resetting user inactivity.
+     * @param UserInactivityMonitor The object to use for resetting user inactivity.
      * @param defaultAudioProvider A default @c avsCommon::AudioProvider to use for ExpectSpeech if the previous
      *     provider is not readable (@c avsCommon::AudioProvider::alwaysReadable).  This parameter is optional and
      *     defaults to an invalid @c avsCommon::AudioProvider.
@@ -92,7 +96,7 @@ public:
         std::shared_ptr<avsCommon::sdkInterfaces::FocusManagerInterface> focusManager,
         std::shared_ptr<avsCommon::avs::DialogUXStateAggregator> dialogUXStateAggregator,
         std::shared_ptr<avsCommon::sdkInterfaces::ExceptionEncounteredSenderInterface> exceptionEncounteredSender,
-        std::shared_ptr<avsCommon::sdkInterfaces::UserActivityNotifierInterface> userActivityNotifier,
+        std::shared_ptr<avsCommon::sdkInterfaces::UserInactivityMonitorInterface> userInactivityNotifier,
         AudioProvider defaultAudioProvider = AudioProvider::null());
 
     /**
@@ -113,11 +117,12 @@ public:
     void removeObserver(std::shared_ptr<ObserverInterface> observer);
 
     /**
-     * This function asks the @c AudioInputProcessor to send a Recognize Event to AVS and start streaming from
-     * @c audioProvider, which transitions it to the @c RECOGNIZING state.  This function can be called in any state
-     * except @c BUSY, however the flags in @c AudioProvider will dictate whether the call is allowed to override an
-     * ongoing Recognize Event.  If the flags do not allow an override, no event will be sent, no state change will
-     * occur, and the function will fail.
+     * This function asks the @c AudioInputProcessor to send a Recognize Event to AVS and start streaming from @c
+     * audioProvider, which transitions it to the @c RECOGNIZING state.  A ReportEchoSpatialPerceptionData Event will
+     * also be sent before the Recognize event if ESP measurements is passed into @c espData.  This function can be
+     * called in any state except @c BUSY, however the flags in @c AudioProvider will dictate whether the call is
+     * allowed to override an ongoing Recognize Event. If the flags do not allow an override, no event will be sent, no
+     * state change will occur, and the function will fail.
      *
      * @note This function will not pass the audio stream to @c MessageSenderInterface to start streaming if the the
      *     start index or any subsequent data has already expired from the buffer.  In addition, it is assumed that
@@ -138,6 +143,8 @@ public:
      *
      * @param audioProvider The @c AudioProvider to stream audio from.
      * @param initiator The type of interface that initiated this recognize event.
+     * @param startOfSpeechTimestamp Moment in time when user started talking to Alexa. This parameter is optional
+     * and it is used to measure user perceived latency.
      * @param begin The @c Index in @c audioProvider.stream where audio streaming should begin.  This parameter is
      *     optional, and defaults to @c INVALID_INDEX.  When this parameter is not specified, @c recognize() will
      *     stream audio starting at the time of the @c recognize() call.  If the @c initiator is @c WAKEWORD, and this
@@ -149,14 +156,19 @@ public:
      *     empty string.  This parameter is ignored if initiator is not @c WAKEWORD.  The only value currently
      *     accepted by AVS for keyword is "ALEXA".  See
      *     https://developer.amazon.com/public/solutions/alexa/alexa-voice-service/reference/context#recognizerstate
+     * @param espData The ESP measurements to be sent in the ReportEchoSpatialPerceptionData event.
+     * @param KWDMetadata Wake word engine metadata.
      * @return A future which is @c true if the Recognize Event was started successfully, else @c false.
      */
     std::future<bool> recognize(
         AudioProvider audioProvider,
         Initiator initiator,
+        std::chrono::steady_clock::time_point startOfSpeechTimestamp = std::chrono::steady_clock::now(),
         avsCommon::avs::AudioInputStream::Index begin = INVALID_INDEX,
         avsCommon::avs::AudioInputStream::Index keywordEnd = INVALID_INDEX,
-        std::string keyword = "");
+        std::string keyword = "",
+        const ESPData espData = ESPData::getEmptyESPData(),
+        std::shared_ptr<const std::vector<char>> KWDMetadata = nullptr);
 
     /**
      * This function asks the @c AudioInputProcessor to stop streaming audio and end an ongoing Recognize Event, which
@@ -175,12 +187,6 @@ public:
      * @return A future which indicates when the @c AudioInputProcessor is back to the @c IDLE state.
      */
     std::future<void> resetState();
-
-    /// @name StateProviderInterface Functions
-    /// @{
-    void provideState(const avsCommon::avs::NamespaceAndName& stateProviderName, unsigned int stateRequestToken)
-        override;
-    /// @}
 
     /// @name ContextRequesterInterface Functions
     /// @{
@@ -215,6 +221,11 @@ public:
         avsCommon::sdkInterfaces::DialogUXStateObserverInterface::DialogUXState newState) override;
     /// @}
 
+    /// @name CapabilityConfigurationInterface Functions
+    /// @{
+    std::unordered_set<std::shared_ptr<avsCommon::avs::CapabilityConfiguration>> getCapabilityConfigurations() override;
+    /// @}
+
 private:
     /**
      * Constructor.
@@ -224,7 +235,7 @@ private:
      * @param contextManager The AVS Context manager used to generate system context for events.
      * @param focusManager The channel focus manager used to manage usage of the dialog channel.
      * @param exceptionEncounteredSender The object to use for sending ExceptionEncountered messages.
-     * @param userActivityNotifier The object to use for resetting user inactivity.
+     * @param userInactivityMonitor The object to use for resetting user inactivity.
      * @param defaultAudioProvider A default @c avsCommon::AudioProvider to use for ExpectSpeech if the previous
      *     provider is not readable (@c AudioProvider::alwaysReadable).  This parameter is optional, and ignored if set
      *     to @c AudioProvider::null().
@@ -239,7 +250,7 @@ private:
         std::shared_ptr<avsCommon::sdkInterfaces::ContextManagerInterface> contextManager,
         std::shared_ptr<avsCommon::sdkInterfaces::FocusManagerInterface> focusManager,
         std::shared_ptr<avsCommon::sdkInterfaces::ExceptionEncounteredSenderInterface> exceptionEncounteredSender,
-        std::shared_ptr<avsCommon::sdkInterfaces::UserActivityNotifierInterface> userActivityNotifier,
+        std::shared_ptr<avsCommon::sdkInterfaces::UserInactivityMonitorInterface> userInactivityMonitor,
         AudioProvider defaultAudioProvider);
 
     /// @name RequiresShutdown Functions
@@ -271,6 +282,13 @@ private:
     void handleExpectSpeechDirective(std::shared_ptr<DirectiveInfo> info);
 
     /**
+     * This function handles a SET_END_OF_SPEECH_OFFSET directive.
+     *
+     * @param info The @c DirectiveInfo containing the @c AVSDirective and the @c DirectiveHandlerResultInterface.
+     */
+    void handleSetEndOfSpeechOffsetDirective(std::shared_ptr<DirectiveInfo> info);
+
+    /**
      * @name Executor Thread Functions
      *
      * These functions (and only these functions) are called by @c m_executor on a single worker thread.  All other
@@ -280,37 +298,42 @@ private:
     /// @{
 
     /**
-     * This function builds and sends a @c Recognize event.  This version of the function expects an enumerated
-     * @c Initiator, and will build up the initiator json content for the event, before calling the
-     * @c executeRecognize() function below which takes an initiator string.
+     * This function builds a @c ReportEchoSpatialPerceptionData event.  The event will not be sent out until context is
+     * available so that the @c ReportEchoSpatialPerceptionData event will be sent just before the @c Recognize event.
+     * @param espData The ESP measurements to be sent in the ReportEchoSpatialPerceptionData event.
+     */
+    void executePrepareEspPayload(const ESPData espData);
+
+    /**
+     * This function builds @c a Recognize event and will request context so the events will be sent upon @c
+     * onContextAvailable().  This version of the function expects an enumerated @c Initiator, and will build up the
+     * initiator json content for the event, before calling the @c executeRecognize() function below which takes an
+     * initiator string.
      *
      * @see @c recognize() for a detailed explanation of the Recognize Event.
      *
      * @param audioProvider The @c AudioProvider to stream audio from.
      * @param initiator The type of interface that initiated this recognize event.
-     * @param begin The @c Index in @c audioProvider.stream where audio streaming should begin.  This parameter is
-     *     optional, and defaults to @c INVALID_INDEX.  When this parameter is not specified, @c recognize() will
-     *     stream audio starting at the time of the @c recognize() call.  If the @c initiator is @c WAKEWORD, and this
-     *     and @c keywordEnd are specified, streaming will begin between 0 and 500ms prior to the @c Index specified by
-     *     this parameter to attempt false wakeword validation.
-     * @param keywordEnd The @c Index in @c audioProvider.stream where the wakeword ends.  This parameter is optional,
-     *     and defaults to @c INVALID_INDEX.  This parameter is ignored if initiator is not @c WAKEWORD.
-     * @param keyword The text of the keyword which was recognized.  This parameter is optional, and defaults to an
-     *     empty string.  This parameter is ignored if initiator is not @c WAKEWORD.  The only value currently
-     *     accepted by AVS for keyword is "ALEXA".  See
-     *     https://developer.amazon.com/public/solutions/alexa/alexa-voice-service/reference/context#recognizerstate
+     * @param startOfSpeechTimestamp Moment in time when user started talking to Alexa.
+     * @param begin The @c Index in @c audioProvider.stream where audio streaming should begin. When this parameter is
+     *     @c INVALID_INDEX, @c recognize() will stream audio starting at the time of the @c recognize() call.
+     * @param keywordEnd The @c Index in @c audioProvider.stream where the wakeword ends.
+     * @param keyword The text of the keyword which was recognized.
+     * @param KWDMetadata Wake word engine metadata.
      * @return @c true if the Recognize Event was started successfully, else @c false.
      */
     bool executeRecognize(
         AudioProvider provider,
         Initiator initiator,
-        avsCommon::avs::AudioInputStream::Index begin = INVALID_INDEX,
-        avsCommon::avs::AudioInputStream::Index keywordEnd = INVALID_INDEX,
-        const std::string& keyword = "");
+        std::chrono::steady_clock::time_point startOfSpeechTimestamp,
+        avsCommon::avs::AudioInputStream::Index begin,
+        avsCommon::avs::AudioInputStream::Index keywordEnd,
+        const std::string& keyword,
+        std::shared_ptr<const std::vector<char>> KWDMetadata);
 
     /**
      * This function builds and sends a @c Recognize event.  This version of the function expects a pre-built string
-     * containing the iniator json content for the event.  This initiator string is either built by the
+     * containing the initiator json content for the event.  This initiator string is either built by the
      * @c executeRecognize() function above which takes an enumerated @c Initiator, or is an opaque object provided by
      * an @c ExpectSpeech directive.
      *
@@ -318,6 +341,7 @@ private:
      *
      * @param audioProvider The @c AudioProvider to stream audio from.
      * @param initiatorJson A JSON string describing the type of interface that initiated this recognize event.
+     * @param startOfSpeechTimestamp Moment in time when user started talking to Alexa.
      * @param begin The @c Index in @c audioProvider.stream where audio streaming should begin.  This parameter is
      *     optional, and defaults to @c INVALID_INDEX.  When this parameter is not specified, @c recognize() will
      *     stream audio starting at the time of the @c recognize() call.  If the @c initiator is @c WAKEWORD, and this
@@ -327,13 +351,16 @@ private:
      *     empty string.  This parameter is ignored if initiator is not @c WAKEWORD.  The only value currently
      *     accepted by AVS for keyword is "ALEXA".  See
      *     https://developer.amazon.com/public/solutions/alexa/alexa-voice-service/reference/context#recognizerstate
+     * @param KWDMetadata Wake word engine metadata.
      * @return @c true if the Recognize Event was started successfully, else @c false.
      */
     bool executeRecognize(
         AudioProvider provider,
         const std::string& initiatorJson,
+        std::chrono::steady_clock::time_point startOfSpeechTimestamp = std::chrono::steady_clock::now(),
         avsCommon::avs::AudioInputStream::Index begin = INVALID_INDEX,
-        const std::string& keyword = "");
+        const std::string& keyword = "",
+        std::shared_ptr<const std::vector<char>> KWDMetadata = nullptr);
 
     /**
      * This function receives the full system context from @c ContextManager.  Context requests are initiated by
@@ -397,15 +424,11 @@ private:
      * occurs, the timer will call @c executeExpectSpeechTimedOut(), which will send an ExpectSpeechTimedOut event.
      *
      * @param timeout The number of milliseconds to wait for a Recognize event.
-     * @param initiator The initiator json string from the ExpectSpeech directive.
      * @param info The @c DirectiveInfo for this call.
      * @return @c true if called in the correct state and the state had changed to @c EXPECTING_SPEECH or
      *     @c RECOGNIZING, else @c false.
      */
-    bool executeExpectSpeech(
-        std::chrono::milliseconds timeout,
-        std::string initiator,
-        std::shared_ptr<DirectiveInfo> info);
+    bool executeExpectSpeech(std::chrono::milliseconds timeout, std::shared_ptr<DirectiveInfo> info);
 
     /**
      * This function is called when @c m_expectingSpeechTimer expires.  It will send an ExpectSpeechTimedOut event.
@@ -413,17 +436,6 @@ private:
      * @return @c true if called in the correct state and the ExpectSpeechTimedOut event was sent, else @c false.
      */
     bool executeExpectSpeechTimedOut();
-
-    /**
-     * This function provides updated context information for SpeechRecognizer to @c ContextManager.  This function is
-     * called when @c ContextManager calls @c provideState(), and is also called internally by @c setState().
-     *
-     * @param sendToken flag indicating whether @c stateRequestToken contains a valid token which should be passed
-     *     along to @c ContextManager.  This flag defaults to @c false.
-     * @param stateRequestToken The token @c ContextManager passed to the @c provideState() call, which will be passed
-     *     along to the ContextManager::setState() call.  This parameter is not used if @c sendToken is @c false.
-     */
-    void executeProvideState(bool sendToken = false, unsigned int stateRequestToken = 0);
 
     /**
      * This function is called whenever the AVS UX dialog state of the system changes. This function will block
@@ -466,8 +478,8 @@ private:
     /// The @c FocusManager used to manage usage of the dialog channel.
     std::shared_ptr<avsCommon::sdkInterfaces::FocusManagerInterface> m_focusManager;
 
-    /// The @c UserInactivityMonitor used to reset the inactivity timer of the user.
-    std::shared_ptr<avsCommon::sdkInterfaces::UserActivityNotifierInterface> m_userActivityNotifier;
+    /// The @c UserInactivityMonitorInterface used to reset the inactivity timer of the user.
+    std::shared_ptr<avsCommon::sdkInterfaces::UserInactivityMonitorInterface> m_userInactivityMonitor;
 
     /// Timer which runs in the @c EXPECTING_SPEECH state.
     avsCommon::utils::timing::Timer m_expectingSpeechTimer;
@@ -503,32 +515,50 @@ private:
     std::shared_ptr<avsCommon::avs::attachment::InProcessAttachmentReader> m_reader;
 
     /**
+     * The attachment reader used for the wake word engine metadata. It's is populated by a call to @c
+     * executeRecognize(), and later consumed by a call to @c executeOnContextAvailable() when the context arrives and
+     * the full @c MessageRequest can be assembled.  This reader is only relevant during the @c RECOGNIZING state.
+     */
+    std::shared_ptr<avsCommon::avs::attachment::AttachmentReader> m_KWDMetadataReader;
+
+    /**
+     * The payload for a ReportEchoSpatialPerceptionData event.  This string is populated by a call to @c
+     * executeRecognize(), and later consumed by a call to @c executeOnContextAvailable() when the context arrives and
+     * the full @c MessageRequest can be assembled.  This string is only relevant during the @c RECOGNIZING state.
+     */
+    std::string m_espPayload;
+
+    /**
      * The payload for a Recognize event.  This string is populated by a call to @c executeRecognize(), and later
      * consumed by a call to @c executeOnContextAvailable() when the context arrives and the full @c MessageRequest can
      * be assembled.  This string is only relevant during the @c RECOGNIZING state.
      */
-    std::string m_payload;
+    std::string m_recognizePayload;
+
+    /**
+     * The @c MessageRequest for a ReportEchoSpatialPerceptionData event.  This request is created by a call to
+     * @c executeOnContextAvailable(), and either sent immediately (if `m_focusState == afml::FocusState::FOREGROUND`),
+     * or later sent by a call to @c executeOnFocusChanged().  This pointer is only valid during the @c RECOGNIZING
+     * state after a call to @c executeRecognize(), and is reset after it is sent.
+     */
+    std::shared_ptr<avsCommon::avs::MessageRequest> m_espRequest;
 
     /**
      * The @c MessageRequest for a Recognize event.  This request is created by a call to
      * @c executeOnContextAvailable(), and either sent immediately (if `m_focusState == afml::FocusState::FOREGROUND`),
      * or later sent by a call to @c executeOnFocusChanged().  This pointer is only valid during the @c RECOGNIZING
      * state after a call to @c executeRecognize(), and is reset after it is sent.
+     *
+     * @note If ESP measurement is provided in @c recognize(), the @c ReportEchoSpatialPerceptionData event is sent
+     * before the @c Recognize event.
      */
-    std::shared_ptr<avsCommon::avs::MessageRequest> m_request;
+    std::shared_ptr<avsCommon::avs::MessageRequest> m_recognizeRequest;
 
     /// The current state of the @c AudioInputProcessor.
     ObserverInterface::State m_state;
 
     /// The current focus state of the @c AudioInputProcessor on the dialog channel.
     avsCommon::avs::FocusState m_focusState;
-
-    /**
-     * The most recent wakeword used.  This variable defaults to "ALEXA", and is updated whenever a wakeword-enabled
-     * call to @c executeRecognize() is made.  The @c executeProvideState() function uses this variable to populate the
-     * wakeword field in the RecognizerState context.
-     */
-    std::string m_wakeword;
 
     /**
      * This flag is set to @c true upon entering the @c RECOGNIZING state, and remains true until the @c Recognize
@@ -544,7 +574,27 @@ private:
 
     /// This flag indicates whether the initial dialog UX State has been received.
     bool m_initialDialogUXStateReceived;
+
+    /**
+     * This flag indicates if a stop has been done locally on the device and that it's safe to ignore the StopCapture
+     * directive.
+     */
+    bool m_localStopCapturePerformed;
+
+    /**
+     * The initiator value from the preceding ExpectSpeech directive. The ExpectSpeech directive's initiator
+     * will need to be consumed and sent back in a subsequent Recognize event. This should be cleared if the
+     * ExpectSpeech times out. An empty initiator is possible, in which case an empty initiator should be sent back to
+     * AVS. This must override the standard user initiated Recognize initiator.
+     *
+     * A value of nullptr indicates that there is no pending preceding initiator to be consumed, and the Recognize's
+     * initiator should conform to the standard user initiated format.
+     */
+    std::unique_ptr<std::string> m_precedingExpectSpeechInitiator;
     /// @}
+
+    /// Set of capability configurations that will get published using the Capabilities API
+    std::unordered_set<std::shared_ptr<avsCommon::avs::CapabilityConfiguration>> m_capabilityConfigurations;
 
     /**
      * @c Executor which queues up operations from asynchronous API calls.

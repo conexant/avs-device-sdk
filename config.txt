@@ -54,7 +54,6 @@ dtparam=spi=on
 
 # Enable audio (loads snd_bcm2835)
 dtparam=audio=off
-dtoverlay=rpi-cxsmartspk-usb
 dtoverlay=i2s-mmap
 dtparam=i2c_arm=on
 core_freq=250

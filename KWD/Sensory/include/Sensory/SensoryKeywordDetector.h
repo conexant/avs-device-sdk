@@ -1,7 +1,5 @@
 /*
- * SensoryKeywordDetector.h
- *
- * Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright 2017-2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License").
  * You may not use this file except in compliance with the License.
@@ -31,6 +29,18 @@
 #include "KWD/AbstractKeywordDetector.h"
 #include "snsr.h"
 
+#ifdef TWO_STAGE_TRIGGER
+#include <PortAudioMicrophoneWrapper.h>
+#include "GPIOWakeWord.h"
+#include <condition_variable>
+#include <thread>
+#include <atomic>
+#include <mutex>
+
+using namespace AlexaWakeWord; 
+#endif
+
+
 namespace alexaClientSDK {
 namespace kwd {
 
@@ -57,6 +67,9 @@ public:
      * @return A new @c SensoryKeywordDetector, or @c nullptr if the operation failed.
      */
     static std::unique_ptr<SensoryKeywordDetector> create(
+#ifdef TWO_STAGE_TRIGGER
+			std::shared_ptr<sampleApp::PortAudioMicrophoneWrapper> micWrapper,
+#endif
         std::shared_ptr<AudioInputStream> stream,
         avsCommon::utils::AudioFormat audioFormat,
         std::unordered_set<std::shared_ptr<KeyWordObserverInterface>> keyWordObservers,
@@ -85,6 +98,9 @@ private:
      * Sensory in example code.
      */
     SensoryKeywordDetector(
+#ifdef TWO_STAGE_TRIGGER
+        std::shared_ptr<sampleApp::PortAudioMicrophoneWrapper> micWrapper,
+#endif
         std::shared_ptr<AudioInputStream> stream,
         std::unordered_set<std::shared_ptr<KeyWordObserverInterface>> keyWordObservers,
         std::unordered_set<std::shared_ptr<KeyWordDetectorStateObserverInterface>> keyWordDetectorStateObservers,
@@ -111,6 +127,17 @@ private:
 
     /// The main function that reads data and feeds it into the engine.
     void detectionLoop();
+#ifdef TWO_STAGE_TRIGGER    
+		bool gpioDetect();
+		void checkTimeOut();
+		enum class State {
+		  UNINITIALIZED = 1,			// agent is not initialized.
+		  WORD_DETECTING,					
+		  WORD_DETECTED,	
+		  WORD_DETECTED_TIMEOUT,		
+		  RESUME_REQUESTED
+		};
+#endif
 
     /**
      * The callback that Sensory will issue to notify of keyword detections.
@@ -148,6 +175,17 @@ private:
      * sampling rate of the audio data passed in.
      */
     const size_t m_maxSamplesPerPush;
+#ifdef TWO_STAGE_TRIGGER
+	/// The microphone managing object.
+	std::shared_ptr<sampleApp::PortAudioMicrophoneWrapper> m_micWrapper;
+	std::unique_ptr<GPIOWakeWord> m_gpioWakeWord;
+	pthread_mutex_t m_checkDetectTimeOut = PTHREAD_MUTEX_INITIALIZER;
+	pthread_cond_t m_detectTrigger = PTHREAD_COND_INITIALIZER;
+	State m_currentState;
+	std::unique_ptr<std::thread> m_threadCheckTimeOut;
+	avsCommon::avs::AudioInputStream::Index m_seekOffset = 0;
+#endif
+
 };
 
 }  // namespace kwd

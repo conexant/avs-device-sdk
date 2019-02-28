@@ -1,40 +1,90 @@
-add_executable(SampleApp 
-    main.cpp 
-    PortAudioMicrophoneWrapper.cpp 
-    InteractionManager.cpp 
-    UserInputManager.cpp
-    ConsolePrinter.cpp
-    GuiRenderer.cpp
-    UIManager.cpp
-    KeywordObserver.cpp
+set(SampleApp_SOURCES)
+if(CURSES)
+list(APPEND SampleApp_SOURCES 
     ConnectionObserver.cpp
-    SampleApplication.cpp)
+    ConsolePrinter.cpp
+    ConsoleReader.cpp
+    GuiRenderer.cpp
+    InteractionManager.cpp
+    KeywordObserver.cpp
+    UIManager.cpp
+    UserInputManagerCurses.cpp
+    SampleApplication.cpp
+    SampleEqualizerModeController.cpp
+    main.cpp)
+else()
+list(APPEND SampleApp_SOURCES 
+    ConnectionObserver.cpp
+    ConsolePrinter.cpp
+    ConsoleReader.cpp
+    GuiRenderer.cpp
+    InteractionManager.cpp
+    KeywordObserver.cpp
+    UIManager.cpp
+    UserInputManager.cpp
+    SampleApplication.cpp
+    SampleEqualizerModeController.cpp
+    main.cpp)
+endif()
+
+if (PORTAUDIO)
+    list(APPEND SampleApp_SOURCES PortAudioMicrophoneWrapper.cpp)
+endif()
+
+IF (A4B)
+    list(APPEND SampleApp_SOURCES RevokeAuthorizationObserver.cpp)
+ENDIF()
+
+IF (HAS_EXTERNAL_MEDIA_PLAYER_ADAPTERS)
+    file(GLOB_RECURSE SRC_FILE ${CMAKE_CURRENT_SOURCE_DIR}/ExternalMediaAdapterRegistration/*.cpp)
+    foreach(myfile ${SRC_FILE})
+       list(APPEND SampleApp_SOURCES ${myfile})
+    endforeach(myfile)
+ENDIF()
+
+add_executable(SampleApp ${SampleApp_SOURCES})
 
 target_include_directories(SampleApp PUBLIC 
     "${SampleApp_SOURCE_DIR}/include"
-    "${MediaPlayer_SOURCE_DIR}/include"
-    "${DefaultClient_SOURCE_DIR}/include"
     "${AudioResources_SOURCE_DIR}/include"
+    "${RegistrationManager_SOURCE_DIR}/include"
+    "${ESP_SOURCE_DIR}/include"
     "${PORTAUDIO_INCLUDE_DIR}")
 
 target_link_libraries(SampleApp 
     DefaultClient
-    AuthDelegate 
-    MediaPlayer 
+    CapabilitiesDelegate
+    CBLAuthDelegate
+    SQLiteStorage
+    ESP
+    EqualizerImplementations
     "${PORTAUDIO_LIB_PATH}")
 
-if(KITTAI_KEY_WORD_DETECTOR)
-    target_link_libraries(SampleApp 
-        KITTAI)
+if (ANDROID)
+    target_include_directories(SampleApp PUBLIC "${AndroidUtilities}/include")
+    target_link_libraries(SampleApp AndroidUtilities)
+    if (ANDROID_MEDIA_PLAYER)
+        target_include_directories(SampleApp PUBLIC "${AndroidSLESMediaPlayer}/include")
+        target_link_libraries(SampleApp AndroidSLESMediaPlayer)
+    endif()
 endif()
 
-if(SENSORY_KEY_WORD_DETECTOR)
-    target_link_libraries(SampleApp SENSORY)
+if (GSTREAMER_MEDIA_PLAYER)
+    target_include_directories(SampleApp PUBLIC "${MediaPlayer_SOURCE_DIR}/include")
+    target_link_libraries(SampleApp MediaPlayer)
+endif()
+
+if(KWD)
+    target_link_libraries(SampleApp KeywordDetectorProvider)
 endif()
 
 if(LED)
     target_link_libraries(SampleApp LED)
     configure_file(host_demo.exe ${CMAKE_CURRENT_BINARY_DIR}/host_demo.exe COPYONLY)
+endif()
+
+if(AURORA_GPIO)
+    configure_file(host_demo_aur.exe ${CMAKE_CURRENT_BINARY_DIR}/host_demo_aur.exe COPYONLY)
 endif()
 
 if (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
@@ -46,7 +96,6 @@ if (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
         "-framework Carbon")
 elseif(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
     target_link_libraries(SampleApp
-        rt m pthread asound)
-elseif(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
-    message(FATAL_ERROR "Windows is unsupported at the moment")  
+      rt m pthread asound)
 endif()
+

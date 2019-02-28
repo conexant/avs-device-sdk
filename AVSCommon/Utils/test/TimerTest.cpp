@@ -1,7 +1,5 @@
 /*
- * TimerTest.cpp
- *
- * Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright 2017-2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License").
  * You may not use this file except in compliance with the License.
@@ -29,7 +27,11 @@ namespace timing {
 namespace test {
 
 /// Specifies the expected timing accuracy (timestamps must be within +/- ACCURACY of expected values).
+#ifdef _WIN32
+static const auto ACCURACY = std::chrono::milliseconds(30);
+#else
 static const auto ACCURACY = std::chrono::milliseconds(15);
+#endif
 
 /// Used for cases where the task should return immediately, without delay.
 static const auto NO_DELAY = std::chrono::milliseconds(0);

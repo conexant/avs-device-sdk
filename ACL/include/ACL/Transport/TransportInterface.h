@@ -1,7 +1,5 @@
 /*
- * TransportInterface.h
- *
- * Copyright 2016-2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright 2017-2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License").
  * You may not use this file except in compliance with the License.
@@ -65,6 +63,25 @@ public:
      * @param request The requested message.
      */
     virtual void send(std::shared_ptr<avsCommon::avs::MessageRequest> request) = 0;
+
+    /**
+     * Deleted copy constructor
+     *
+     * @param rhs The 'right hand side' to not copy.
+     */
+    TransportInterface(const TransportInterface& rhs) = delete;
+
+    /**
+     * Deleted assignment operator
+     *
+     * @param rhs The 'right hand side' to not copy.
+     */
+    TransportInterface& operator=(const TransportInterface& rhs) = delete;
+
+    /**
+     * Destructor.
+     */
+    virtual ~TransportInterface() = default;
 };
 
 inline TransportInterface::TransportInterface() : RequiresShutdown{"TransportInterface"} {

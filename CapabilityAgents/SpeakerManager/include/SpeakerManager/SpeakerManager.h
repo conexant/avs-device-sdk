@@ -1,7 +1,5 @@
 /*
- * SpeakerManager.h
- *
- * Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright 2017-2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License").
  * You may not use this file except in compliance with the License.
@@ -26,6 +24,8 @@
 
 #include <AVSCommon/AVS/AVSDirective.h>
 #include <AVSCommon/AVS/CapabilityAgent.h>
+#include <AVSCommon/AVS/CapabilityConfiguration.h>
+#include <AVSCommon/SDKInterfaces/CapabilityConfigurationInterface.h>
 #include <AVSCommon/SDKInterfaces/ContextManagerInterface.h>
 #include <AVSCommon/SDKInterfaces/MessageSenderInterface.h>
 #include <AVSCommon/SDKInterfaces/SpeakerInterface.h>
@@ -54,21 +54,11 @@ namespace speakerManager {
  *     }
  * @endcode
  *
- * AVS documentation specifies that Alerts volume should be handled separately.
- * Currently, the AVS API does not support differentiating between different speakers.
- * To provide clients an option to handle Alerts (and any other) volumes independently,
- * only @c SpeakerInterface::Type::AVS_SYNCED speakers will communicate with AVS.
- *
- * A default type, @c SpeakerInterface::Type::LOCAL, is provided. This type will not be modified by directives sent by
- * AVS, nor will they send events on volume/mute change. These @c SpeakerInterfaces can still be modified through the
- * APIs that @c SpeakerManagerInterface provides. Clients may extend the @c SpeakerInterface::Type enum if multiple
- * independent volume controls are needed.
- *
- * If clients wish directives and events to apply to the specific @c SpeakerInterface, it must
- * have a type of @c SpeakerInterface::Type::AVS_SYNCED.
+ * Clients may extend the @c SpeakerInterface::Type enum if multiple independent volume controls are needed.
  */
 class SpeakerManager
         : public avsCommon::avs::CapabilityAgent
+        , public avsCommon::sdkInterfaces::CapabilityConfigurationInterface
         , public avsCommon::sdkInterfaces::SpeakerManagerInterface
         , public avsCommon::utils::RequiresShutdown {
 public:
@@ -123,7 +113,14 @@ public:
         std::shared_ptr<avsCommon::sdkInterfaces::SpeakerManagerObserverInterface> observer) override;
     void removeSpeakerManagerObserver(
         std::shared_ptr<avsCommon::sdkInterfaces::SpeakerManagerObserverInterface> observer) override;
+    void addSpeaker(std::shared_ptr<avsCommon::sdkInterfaces::SpeakerInterface> speaker) override;
     /// @}
+
+    /// @name CapabilityConfigurationInterface Functions
+    /// @{
+    std::unordered_set<std::shared_ptr<avsCommon::avs::CapabilityConfiguration>> getCapabilityConfigurations() override;
+    /// @}
+
 private:
     /**
      * Constructor. Called after validation has occurred on parameters.
@@ -308,6 +305,9 @@ private:
 
     /// The observers to be notified whenever any of the @c SpeakerSetting changing APIs are called.
     std::unordered_set<std::shared_ptr<avsCommon::sdkInterfaces::SpeakerManagerObserverInterface>> m_observers;
+
+    /// Set of capability configurations that will get published using the Capabilities API
+    std::unordered_set<std::shared_ptr<avsCommon::avs::CapabilityConfiguration>> m_capabilityConfigurations;
 
     /// An executor to perform operations on a worker thread.
     avsCommon::utils::threading::Executor m_executor;

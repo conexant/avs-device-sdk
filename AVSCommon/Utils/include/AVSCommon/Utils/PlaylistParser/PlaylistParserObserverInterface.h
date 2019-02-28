@@ -1,7 +1,5 @@
 /*
- * PlaylistParserObserverInterface.h
- *
- * Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright 2017-2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License").
  * You may not use this file except in compliance with the License.
@@ -18,6 +16,7 @@
 #ifndef ALEXA_CLIENT_SDK_AVSCOMMON_UTILS_INCLUDE_AVSCOMMON_UTILS_PLAYLISTPARSER_PLAYLISTPARSEROBSERVERINTERFACE_H_
 #define ALEXA_CLIENT_SDK_AVSCOMMON_UTILS_INCLUDE_AVSCOMMON_UTILS_PLAYLISTPARSER_PLAYLISTPARSEROBSERVERINTERFACE_H_
 
+#include <chrono>
 #include <ostream>
 #include <queue>
 #include <string>
@@ -33,7 +32,7 @@ namespace playlistParser {
 enum class PlaylistParseResult {
 
     /// The playlist has been fully parsed successfully. This indicates that parsing of the playlist has completed.
-    SUCCESS,
+    FINISHED,
 
     /**
      * The playlist parsing has encountered an error and will abort parsing. In this case, the url in the callback will
@@ -64,8 +63,10 @@ public:
      * @param requestId The id of the callback to connect this callback to an original request.
      * @param url An entry that has been extracted.
      * @param parseResult The result of parsing the playlist.
-     * @param durationInSections A duration in seconds of the playlist entry, if it was able to be deduced based on
+     * @param duration A duration in milliseconds of the playlist entry, if it was able to be deduced based on
      * available playlist metadata.
+     *
+     * @note This function is always called from a single thread in PlayListParser.
      */
     virtual void onPlaylistEntryParsed(
         int requestId,
@@ -83,8 +84,8 @@ public:
  */
 inline std::ostream& operator<<(std::ostream& stream, const PlaylistParseResult& result) {
     switch (result) {
-        case PlaylistParseResult::SUCCESS:
-            stream << "SUCCESS";
+        case PlaylistParseResult::FINISHED:
+            stream << "FINISHED";
             break;
         case PlaylistParseResult::ERROR:
             stream << "ERROR";

@@ -1,7 +1,5 @@
 /*
- * LibCurlHttpContentFetcher.h
- *
- * Copyright 2016-2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright 2017-2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License").
  * You may not use this file except in compliance with the License.
@@ -43,7 +41,9 @@ public:
      * @copydoc
      * In this implementation, the function may only be called once. Subsequent calls will return @c nullptr.
      */
-    std::unique_ptr<avsCommon::utils::HTTPContent> getContent(FetchOptions fetchOption) override;
+    std::unique_ptr<avsCommon::utils::HTTPContent> getContent(
+        FetchOptions option,
+        std::shared_ptr<avsCommon::avs::attachment::AttachmentWriter> writer = nullptr) override;
 
     /*
      * Destructor.
@@ -73,12 +73,6 @@ private:
     std::promise<std::string> m_contentTypePromise;
 
     /**
-     * A flag to indicate that the body callback has begun. This is used so that we know when header parsing has
-     * finished and we can satisfy the promises.
-     */
-    bool m_bodyCallbackBegan;
-
-    /**
      * The writer used to write the HTTP body to, if desired by the caller of @c getContent().
      */
     std::shared_ptr<avsCommon::avs::attachment::AttachmentWriter> m_streamWriter;
@@ -95,8 +89,11 @@ private:
      */
     std::string m_lastContentType;
 
-    /// Flag to indicate if a shutdown is occurring.
-    std::atomic<bool> m_shuttingDown;
+    /// Flag to indicate that the data-fetch operation has completed.
+    std::atomic<bool> m_done;
+
+    /// Flag to indicate that the @c LibCurlHttpContentFetcher is being shutdown.
+    std::atomic<bool> m_isShutdown;
 
     /**
      * Internal thread that does the curl_easy_perform. The reason for using a thread is that curl_easy_perform may

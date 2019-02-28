@@ -1,7 +1,5 @@
 /*
- * Renderer.h
- *
- * Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright 2017-2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License").
  * You may not use this file except in compliance with the License.
@@ -25,6 +23,8 @@
 #include <AVSCommon/Utils/MediaPlayer/MediaPlayerInterface.h>
 #include <AVSCommon/Utils/MediaPlayer/MediaPlayerObserverInterface.h>
 
+#include <condition_variable>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -161,6 +161,76 @@ private:
      */
     void resetSourceId();
 
+    /**
+     * Utility function that checks whether the default audio will be rendered or will be taken from the URL sources
+     *
+     * @return @c true if default audio will be rendered.  Returns @c false otherwise.
+     */
+    bool shouldPlayDefault();
+
+    /**
+     * Utility function that checks whether the audio source will be played repeatedly by the media player
+     *
+     * @return @c true if media player will loop the audio source .  Returns @c false otherwise.
+     */
+    bool shouldMediaPlayerRepeat();
+
+    /**
+     * Utility function that checks whether there is an audio source that will be played next
+     *
+     * @return @c true if there is an audio source to play next.  Returns @c false otherwise.
+     */
+    bool shouldRenderNext();
+
+    /**
+     * Utility function that checks whether to pause after a playback
+     *
+     * @return @c true if pause is needed after a plaback.  Returns @c false otherwise.
+     */
+    bool shouldPause();
+
+    /**
+     * Utility function that checks whether the last played source is the last one in the loop
+     *
+     * @return @c true if  last played source is the last one in the loop.  Returns @c false otherwise.
+     */
+    bool isLastSourceInLoop();
+
+    /**
+     * Utility function that checks whether the last played source is the last one to be played
+     *
+     * @return @c true if  last played source is the last one to be polayed.  Returns @c false otherwise.
+     */
+    bool isLastSource();
+
+    /**
+     * Implements the pause between playback loops
+     */
+    void pause();
+
+    /**
+     * Implements the playback of the audio source
+     */
+    void play();
+
+    /**
+     * Utility function to handle the rendering of the next audio asset, with respect to @c m_remainingLoopCount and @c
+     * m_nextUrlIndexToRender.  If all urls within a loop have completed, and there are further loops to render, this
+     * function will also perform a sleep for the @c m_loopPause duration.
+     *
+     * @return @c true if there are more audio assets to render, and the next one has been successfully sent to the @c
+     * m_mediaPlayer to be played.  Returns @c false otherwise.
+     */
+    bool renderNextAudioAsset();
+
+    /**
+     * Utility function to handle all aspects of an error occurring.  The sourceId is reset, the observer is notified
+     * and the observer is reset.
+     *
+     * @param error The error string.
+     */
+    void handlePlaybackError(const std::string& error);
+
     /// @}
 
     /**
@@ -181,17 +251,30 @@ private:
     /// rendered instead.
     std::vector<std::string> m_urls;
 
-    /// The next url in the url vector to render.
-    int m_nextUrlIndexToRender;
+    /// The number of streams that have been rendered during the processing of the current loop.
+    int m_numberOfStreamsRenderedThisLoop;
 
-    /// The number of times @c m_urls should be rendered.
-    int m_loopCount;
+    /// The number of times remaining @c m_urls should be rendered.
+    int m_remainingLoopCount;
+
+    /// The number of times @c m_urls should be rendered as specified in the directive
+    int m_directiveLoopCount;
 
     /// The time to pause between the rendering of the @c m_urls sequence.
     std::chrono::milliseconds m_loopPause;
 
-    /// A flag to capture if the renderer has been asked to stop by its owner.
+    /// A pointer to a stream factory to use as the default audio to use when the audio assets aren't available.
+    std::function<std::unique_ptr<std::istream>()> m_defaultAudioFactory;
+
+    /// A flag to capture if the renderer has been asked to stop by its owner. @c m_waitMutex must be locked when
+    /// modifying this variable.
     bool m_isStopping;
+
+    /// The condition variable used to wait for @c stop() or @c m_loopPause timeouts.
+    std::condition_variable m_waitCondition;
+
+    /// The mutex for @c m_waitCondition.
+    std::mutex m_waitMutex;
 
     /// The id associated with the media that our MediaPlayer is currently handling.
     SourceId m_currentSourceId;

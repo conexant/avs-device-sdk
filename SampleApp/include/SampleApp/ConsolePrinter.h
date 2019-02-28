@@ -1,7 +1,5 @@
 /*
- * ConsolePrinter.h
- *
- * Copyright (c) 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright 2017-2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License").
  * You may not use this file except in compliance with the License.
@@ -22,6 +20,7 @@
 #include <string>
 
 #include <AVSCommon/Utils/Logger/Logger.h>
+#include <AVSCommon/Utils/Logger/LogStringFormatter.h>
 
 namespace alexaClientSDK {
 namespace sampleApp {
@@ -50,6 +49,13 @@ public:
      */
     static void prettyPrint(const std::string& stringToPrint);
 
+    /**
+     * Prints a multi-line message with a pretty format with a \n after.
+     *
+     * @param stringToPrint The string to print.
+     */
+    static void prettyPrint(std::initializer_list<std::string> lines);
+
     void emit(
         avsCommon::utils::logger::Level level,
         std::chrono::system_clock::time_point time,
@@ -66,6 +72,11 @@ private:
      * when called from global's destructor
      */
     std::shared_ptr<std::mutex> m_mutex;
+
+    /**
+     * Object used to format strings for log messages.
+     */
+    avsCommon::utils::logger::LogStringFormatter m_logFormatter;
 };
 
 }  // namespace sampleApp

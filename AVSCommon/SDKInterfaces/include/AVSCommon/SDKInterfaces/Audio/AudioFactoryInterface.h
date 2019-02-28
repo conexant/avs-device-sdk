@@ -1,7 +1,5 @@
 /*
- * AudioFactoryInterface.h
- *
- * Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright 2017-2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License").
  * You may not use this file except in compliance with the License.
@@ -21,6 +19,8 @@
 #include <memory>
 
 #include "AVSCommon/SDKInterfaces/Audio/AlertsAudioFactoryInterface.h"
+#include "AVSCommon/SDKInterfaces/Audio/CommunicationsAudioFactoryInterface.h"
+#include "AVSCommon/SDKInterfaces/Audio/NotificationsAudioFactoryInterface.h"
 
 namespace alexaClientSDK {
 namespace avsCommon {
@@ -38,6 +38,16 @@ public:
      * This shares a factory that produces audio streams for the alerts components.
      */
     virtual std::shared_ptr<AlertsAudioFactoryInterface> alerts() const = 0;
+
+    /**
+     * This shares a factory that produces audio streams for the notifications components.
+     */
+    virtual std::shared_ptr<NotificationsAudioFactoryInterface> notifications() const = 0;
+
+    /**
+     * This shares a factory that produces audio streams for the communications components.
+     */
+    virtual std::shared_ptr<CommunicationsAudioFactoryInterface> communications() const = 0;
 };
 
 }  // namespace audio

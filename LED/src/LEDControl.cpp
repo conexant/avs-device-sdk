@@ -34,14 +34,15 @@ LEDControl::~LEDControl() {
 
 void LEDControl::DOA(int doa) {
 	setColor(0);
+#ifdef LED24
 	if (doa < 360)
 	{
 		int pixel = doa * LED_COUNT / 360;
-		pixel = (50 - pixel) % LED_COUNT;
+		//pixel = (47 - pixel) % LED_COUNT;
+		//pixel = (pixel + 19) % LED_COUNT; 
+		pixel = (47 - pixel) % LED_COUNT; 
 		if (doa % (360 / LED_COUNT) > (360 / LED_COUNT / 2))
 			pixel = (pixel + 1) % LED_COUNT;
-
-		//fprintf(stdout, "%d\n",pixel);
 
 		m_old_pixel = pixel;
 	}
@@ -49,7 +50,21 @@ void LEDControl::DOA(int doa) {
 	setPixelColor(ledcolors[3], m_old_pixel);
 	setPixelColor(ledcolors[3], (m_old_pixel + 1) % LED_COUNT);
 	setPixelColor(ledcolors[3], (m_old_pixel - 1 + LED_COUNT) % LED_COUNT);
+#else
+	if (doa < 360)
+	{
+		int pixel = doa * LED_COUNT / 360;
+		pixel = (50 - pixel) % LED_COUNT;
+		if (doa % (360 / LED_COUNT) > (360 / LED_COUNT / 2))
+			pixel = (pixel + 1) % LED_COUNT;
 
+		m_old_pixel = pixel;
+	}
+
+	setPixelColor(ledcolors[3], m_old_pixel);
+	setPixelColor(ledcolors[3], (m_old_pixel + 1) % LED_COUNT);
+	setPixelColor(ledcolors[3], (m_old_pixel - 1 + LED_COUNT) % LED_COUNT);
+#endif
 	render();
 }
 

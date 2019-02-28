@@ -1,9 +1,5 @@
-#ifndef ALEXA_CLIENT_SDK_AVSCOMMON_UTILS_INCLUDE_AVSCOMMON_UTILS_LOGGER_LOGGERUTILS_H_
-#define ALEXA_CLIENT_SDK_AVSCOMMON_UTILS_INCLUDE_AVSCOMMON_UTILS_LOGGER_LOGGERUTILS_H_
 /*
- * LoggerUtils.h
- *
- * Copyright 2016-2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright 2017-2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License").
  * You may not use this file except in compliance with the License.
@@ -16,6 +12,9 @@
  * express or implied. See the License for the specific language governing
  * permissions and limitations under the License.
  */
+
+#ifndef ALEXA_CLIENT_SDK_AVSCOMMON_UTILS_INCLUDE_AVSCOMMON_UTILS_LOGGER_LOGGERUTILS_H_
+#define ALEXA_CLIENT_SDK_AVSCOMMON_UTILS_INCLUDE_AVSCOMMON_UTILS_LOGGER_LOGGERUTILS_H_
 
 #include <chrono>
 
@@ -139,21 +138,6 @@ void acsdkCritical(const LogEntry& entry);
  * @param entry A log entry.
  */
 void logEntry(Level level, const LogEntry& entry);
-
-/**
- * Formats a log message into a printable string with other metadata regarding the log message.
- *
- * @param level The severity Level of this log line.
- * @param time The time that the event to log occurred.
- * @param threadMoniker Moniker of the thread that generated the event.
- * @param text The text of the entry to log.
- * @return The formatted string.
- */
-std::string formatLogString(
-    Level level,
-    std::chrono::system_clock::time_point time,
-    const char* threadMoniker,
-    const char* text);
 
 /**
  * Stream out an array of bytes as a hex dump.

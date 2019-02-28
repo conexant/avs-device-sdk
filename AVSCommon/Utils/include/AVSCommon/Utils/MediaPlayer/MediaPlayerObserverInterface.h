@@ -1,7 +1,5 @@
 /*
- * MediaPlayerObserverInterface.h
- *
- * Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright 2017-2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License").
  * You may not use this file except in compliance with the License.
@@ -35,6 +33,9 @@ namespace mediaPlayer {
  * A player observer will receive notifications when the player starts playing or when it stops playing a stream.
  * A pointer to the @c MediaPlayerObserverInterface needs to be provided to a @c MediaPlayer for it to notify the
  * observer.
+ *
+ * @warning An observer should never call a method from the observed media player while handling a callback.
+ * This may cause a deadlock while trying to re-acquire a mutex.
  */
 class MediaPlayerObserverInterface {
 public:

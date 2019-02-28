@@ -8,7 +8,11 @@
 #define TARGET_FREQ             WS2811_TARGET_FREQ
 #define GPIO_PIN                12
 #define DMA                     5
+#ifdef LED24
+#define LED_COUNT				24
+#else
 #define LED_COUNT				32
+#endif
 #define LED_INVERT				false
 #define LED_BRIGHTNESS			20
 #define STRIP_TYPE				WS2811_STRIP_GRB

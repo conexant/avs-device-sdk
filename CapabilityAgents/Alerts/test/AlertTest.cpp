@@ -1,7 +1,5 @@
 /*
- * AlertTest.cpp
- *
- * Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright 2017-2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License").
  * You may not use this file except in compliance with the License.
@@ -235,10 +233,14 @@ TEST_F(AlertTest, testDeactivate) {
 }
 
 TEST_F(AlertTest, testSetTimeISO8601) {
+    avsCommon::utils::timing::TimeUtils timeUtils;
     std::string schedTime{"2030-02-02T12:56:34+0000"};
-    m_alert->setTime_ISO_8601(schedTime);
+    Alert::DynamicData dynamicData;
+    m_alert->getAlertData(nullptr, &dynamicData);
+    ASSERT_TRUE(dynamicData.timePoint.setTime_ISO_8601(schedTime));
+    m_alert->setAlertData(nullptr, &dynamicData);
     int64_t unixTime = 0;
-    avsCommon::utils::timing::convert8601TimeStringToUnix(schedTime, &unixTime);
+    timeUtils.convert8601TimeStringToUnix(schedTime, &unixTime);
 
     ASSERT_EQ(m_alert->getScheduledTime_ISO_8601(), schedTime);
     ASSERT_EQ(m_alert->getScheduledTime_Unix(), unixTime);
@@ -258,34 +260,54 @@ TEST_F(AlertTest, testSnoozeHappyCase) {
 
 TEST_F(AlertTest, testSetLoopCountNegative) {
     int loopCount = -1;
-    m_alert->setLoopCount(loopCount);
+    Alert::DynamicData dynamicData;
+    m_alert->getAlertData(nullptr, &dynamicData);
+    dynamicData.loopCount = loopCount;
+    m_alert->setAlertData(nullptr, &dynamicData);
     ASSERT_NE(m_alert->getLoopCount(), loopCount);
 }
 
 TEST_F(AlertTest, testSetLoopCountHappyCase) {
     int loopCount = 3;
-    m_alert->setLoopCount(loopCount);
+    Alert::DynamicData dynamicData;
+    m_alert->getAlertData(nullptr, &dynamicData);
+    dynamicData.loopCount = loopCount;
+    m_alert->setAlertData(nullptr, &dynamicData);
     ASSERT_EQ(m_alert->getLoopCount(), loopCount);
 }
 
 TEST_F(AlertTest, testSetLoopPause) {
     std::chrono::milliseconds loopPause{900};
-    m_alert->setLoopPause(loopPause);
+    Alert::StaticData staticData;
+    m_alert->getAlertData(&staticData, nullptr);
+    staticData.assetConfiguration.loopPause = loopPause;
+    m_alert->setAlertData(&staticData, nullptr);
     ASSERT_EQ(m_alert->getLoopPause(), loopPause);
 }
 
 TEST_F(AlertTest, testSetBackgroundAssetId) {
     std::string backgroundAssetId{"testAssetId"};
-    m_alert->setBackgroundAssetId(backgroundAssetId);
+    Alert::StaticData staticData;
+    m_alert->getAlertData(&staticData, nullptr);
+    staticData.assetConfiguration.backgroundAssetId = backgroundAssetId;
+    m_alert->setAlertData(&staticData, nullptr);
     ASSERT_EQ(m_alert->getBackgroundAssetId(), backgroundAssetId);
 }
 
 TEST_F(AlertTest, testIsPastDue) {
+    Alert::DynamicData dynamicData;
+    avsCommon::utils::timing::TimeUtils timeUtils;
     int64_t currentUnixTime = 0;
-    avsCommon::utils::timing::getCurrentUnixTime(&currentUnixTime);
-    m_alert->setTime_ISO_8601(TEST_DATE_IN_THE_FUTURE);
+    timeUtils.getCurrentUnixTime(&currentUnixTime);
+
+    m_alert->getAlertData(nullptr, &dynamicData);
+    ASSERT_TRUE(dynamicData.timePoint.setTime_ISO_8601(TEST_DATE_IN_THE_FUTURE));
+    m_alert->setAlertData(nullptr, &dynamicData);
     ASSERT_FALSE(m_alert->isPastDue(currentUnixTime, std::chrono::seconds{1}));
-    m_alert->setTime_ISO_8601(TEST_DATE_IN_THE_PAST);
+
+    m_alert->getAlertData(nullptr, &dynamicData);
+    ASSERT_TRUE(dynamicData.timePoint.setTime_ISO_8601(TEST_DATE_IN_THE_PAST));
+    m_alert->setAlertData(nullptr, &dynamicData);
     ASSERT_TRUE(m_alert->isPastDue(currentUnixTime, std::chrono::seconds{1}));
 }
 

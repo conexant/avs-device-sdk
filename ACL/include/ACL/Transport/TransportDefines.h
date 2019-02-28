@@ -1,7 +1,6 @@
 /*
- * TransportDefines.h
+ * Copyright 2017-2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  *
- * Copyright 2016-2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  * Licensed under the Apache License, Version 2.0 (the "License").
  * You may not use this file except in compliance with the License.
  * A copy of the License is located at
@@ -25,19 +24,7 @@ namespace acl {
 class TransportDefines {
 public:
     /// Table with the retry times on subsequent retries.
-    static int RETRY_TABLE[];
-
-    /// Size of the retry table.
-    static int RETRY_TABLE_SIZE;
-
-    /// Randomization used in the computation of retry times.
-    static int RETRY_RANDOMIZATION_PERCENTAGE;
-
-    /// Lower bound of the interval to distribute the retry duration.
-    static int RETRY_DECREASE_PERCENTAGE;
-
-    /// Upper bound of the interval to distribute the retry duration.
-    static int RETRY_INCREASE_PERCENTAGE;
+    const static std::vector<int> RETRY_TABLE;
 
     /// Retry Timer Object for transport.
     static avsCommon::utils::RetryTimer RETRY_TIMER;

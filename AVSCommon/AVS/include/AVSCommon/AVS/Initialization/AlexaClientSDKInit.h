@@ -1,7 +1,5 @@
 /*
- * AlexaClientSDKInit.h
- *
- * Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright 2017-2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License").
  * You may not use this file except in compliance with the License.
@@ -14,11 +12,13 @@
  * express or implied. See the License for the specific language governing
  * permissions and limitations under the License.
  */
+
 #ifndef ALEXA_CLIENT_SDK_AVSCOMMON_AVS_INCLUDE_AVSCOMMON_AVS_INITIALIZATION_ALEXACLIENTSDKINIT_H_
 #define ALEXA_CLIENT_SDK_AVSCOMMON_AVS_INCLUDE_AVSCOMMON_AVS_INITIALIZATION_ALEXACLIENTSDKINIT_H_
 
 #include <atomic>
 #include <iostream>
+#include <memory>
 #include <vector>
 
 namespace alexaClientSDK {
@@ -43,7 +43,7 @@ public:
      * calls functions of other libraries that have the same requirements and thread safety.
      * terminate() must be called for each initialize() called.
      *
-     * @param jsonConfigurationStreams Vector of @c istreams containing JSON documents from which
+     * @param jsonStreams Vector of @c istreams containing JSON documents from which
      * to parse configuration parameters. Streams are processed in the order they appear in the vector. When a
      * value appears in more than one JSON stream the last processed stream's value overwrites the previous value
      * (and a debug log entry will be created). This allows for specifying default settings (by providing them
@@ -53,7 +53,7 @@ public:
      *
      * @return Whether the initialization was successful.
      */
-    static bool initialize(const std::vector<std::istream*>& jsonStreams);
+    static bool initialize(const std::vector<std::shared_ptr<std::istream>>& jsonStreams);
 
     /**
      * Uninitialize the Alexa Client SDK.

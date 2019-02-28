@@ -1,7 +1,5 @@
 /*
- * MessageRouterInterface.h
- *
- * Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright 2017-2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License").
  * You may not use this file except in compliance with the License.
@@ -25,7 +23,6 @@
 #include "AVSCommon/Utils/Threading/Executor.h"
 #include "AVSCommon/Utils/RequiresShutdown.h"
 #include "AVSCommon/AVS/MessageRequest.h"
-// TODO: ACSDK-421: Revert this to implement send().
 #include "AVSCommon/SDKInterfaces/MessageSenderInterface.h"
 
 #include "ACL/Transport/MessageRouterObserverInterface.h"
@@ -40,7 +37,6 @@ namespace acl {
  *
  * Implementations of this class are required to be thread-safe.
  */
-// TODO: ACSDK-421: Remove the inheritance from MessageSenderInterface.
 class MessageRouterInterface
         : public avsCommon::sdkInterfaces::MessageSenderInterface
         , public avsCommon::utils::RequiresShutdown {
@@ -90,6 +86,11 @@ public:
      * and when messages arrive from AVS.
      */
     virtual void setObserver(std::shared_ptr<MessageRouterObserverInterface> observer) = 0;
+
+    /**
+     * Destructor.
+     */
+    virtual ~MessageRouterInterface() = default;
 };
 
 inline MessageRouterInterface::MessageRouterInterface(const std::string& name) : RequiresShutdown(name) {

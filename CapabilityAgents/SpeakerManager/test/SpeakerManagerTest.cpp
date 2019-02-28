@@ -1,7 +1,5 @@
 /*
- * SpeakerManagerTest.cpp
- *
- * Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright 2017-2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License").
  * You may not use this file except in compliance with the License.
@@ -22,14 +20,14 @@
 #include <AVSCommon/AVS/Attachment/MockAttachmentManager.h>
 #include <AVSCommon/AVS/SpeakerConstants/SpeakerConstants.h>
 #include <AVSCommon/SDKInterfaces/MockContextManager.h>
-#include <AVSCommon/SDKInterfaces/MockContextManager.h>
 #include <AVSCommon/SDKInterfaces/MockDirectiveHandlerResult.h>
 #include <AVSCommon/SDKInterfaces/MockExceptionEncounteredSender.h>
 #include <AVSCommon/SDKInterfaces/MockMessageSender.h>
+#include <AVSCommon/SDKInterfaces/MockSpeakerInterface.h>
 #include <AVSCommon/SDKInterfaces/SpeakerInterface.h>
 #include <AVSCommon/SDKInterfaces/SpeakerManagerObserverInterface.h>
 #include <AVSCommon/Utils/Memory/Memory.h>
-#include "SpeakerManager/SpeakerManagerConstants.h"
+#include <SpeakerManager/SpeakerManagerConstants.h>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <rapidjson/document.h>
@@ -59,15 +57,6 @@ static std::chrono::milliseconds TIMEOUT(1000);
 /// The @c MessageId identifer.
 static const std::string MESSAGE_ID("messageId");
 
-/// Value for mute.
-static const bool MUTE(true);
-
-/// String value for mute.
-static const std::string MUTE_STRING("true");
-
-/// Value for unmute.
-static const bool UNMUTE(false);
-
 /// A @c SetVolume/AdjustVolume payload.
 static const std::string VOLUME_PAYLOAD =
     "{"
@@ -83,76 +72,6 @@ static const std::string MUTE_PAYLOAD =
     MUTE_STRING +
     ""
     "}";
-
-static const SpeakerInterface::SpeakerSettings DEFAULT_SETTINGS{AVS_SET_VOLUME_MIN, UNMUTE};
-
-class MockSpeaker : public SpeakerInterface {
-public:
-    bool setVolume(int8_t volume) {
-        m_settings.volume = volume;
-        return true;
-    }
-
-    bool adjustVolume(int8_t delta) {
-        int8_t curVolume = m_settings.volume + delta;
-        curVolume = std::min(curVolume, AVS_SET_VOLUME_MAX);
-        curVolume = std::max(curVolume, AVS_SET_VOLUME_MIN);
-        m_settings.volume = curVolume;
-        return true;
-    }
-
-    bool setMute(bool mute) {
-        m_settings.mute = mute;
-        return true;
-    }
-
-    bool getSpeakerSettings(SpeakerInterface::SpeakerSettings* settings) {
-        if (!settings) {
-            return false;
-        }
-
-        settings->volume = m_settings.volume;
-        settings->mute = m_settings.mute;
-
-        return true;
-    }
-
-    SpeakerInterface::Type getSpeakerType() {
-        return m_type;
-    }
-
-    MockSpeaker(SpeakerInterface::Type type) : m_type{type} {
-        m_settings = DEFAULT_SETTINGS;
-    }
-
-private:
-    SpeakerInterface::Type m_type;
-    SpeakerInterface::SpeakerSettings m_settings;
-};
-
-class MockSpeakerInterface : public SpeakerInterface {
-public:
-    MOCK_METHOD1(setVolume, bool(int8_t));
-    MOCK_METHOD1(adjustVolume, bool(int8_t));
-    MOCK_METHOD1(setMute, bool(bool));
-    MOCK_METHOD1(getSpeakerSettings, bool(SpeakerInterface::SpeakerSettings*));
-    MOCK_METHOD0(getSpeakerType, SpeakerInterface::Type());
-
-    void DelegateToReal() {
-        ON_CALL(*this, setVolume(_)).WillByDefault(Invoke(&m_speaker, &SpeakerInterface::setVolume));
-        ON_CALL(*this, adjustVolume(_)).WillByDefault(Invoke(&m_speaker, &SpeakerInterface::adjustVolume));
-        ON_CALL(*this, setMute(_)).WillByDefault(Invoke(&m_speaker, &SpeakerInterface::setMute));
-        ON_CALL(*this, getSpeakerSettings(_)).WillByDefault(Invoke(&m_speaker, &SpeakerInterface::getSpeakerSettings));
-        ON_CALL(*this, getSpeakerType()).WillByDefault(Invoke(&m_speaker, &SpeakerInterface::getSpeakerType));
-    }
-
-    MockSpeakerInterface(SpeakerInterface::Type type) : m_speaker{type} {
-    }
-
-private:
-    // Implementation of Speaker object to handle calls.
-    MockSpeaker m_speaker;
-};
 
 /**
  * A mock object to test that the observer is being correctly notified.
@@ -267,7 +186,7 @@ std::string generateVolumeStateJson(SpeakerInterface::SpeakerSettings settings) 
  */
 TEST_F(SpeakerManagerTest, testNullContextManager) {
     std::vector<std::shared_ptr<SpeakerInterface>> speakers{
-        std::make_shared<MockSpeakerInterface>(SpeakerInterface::Type::AVS_SYNCED)};
+        std::make_shared<MockSpeakerInterface>(SpeakerInterface::Type::AVS_SPEAKER_VOLUME)};
 
     m_speakerManager = SpeakerManager::create(speakers, nullptr, m_mockMessageSender, m_mockExceptionSender);
 
@@ -279,7 +198,7 @@ TEST_F(SpeakerManagerTest, testNullContextManager) {
  */
 TEST_F(SpeakerManagerTest, testNullMessageSender) {
     std::vector<std::shared_ptr<SpeakerInterface>> speakers{
-        std::make_shared<MockSpeakerInterface>(SpeakerInterface::Type::AVS_SYNCED)};
+        std::make_shared<MockSpeakerInterface>(SpeakerInterface::Type::AVS_SPEAKER_VOLUME)};
 
     m_speakerManager = SpeakerManager::create(speakers, m_mockContextManager, nullptr, m_mockExceptionSender);
 
@@ -291,7 +210,7 @@ TEST_F(SpeakerManagerTest, testNullMessageSender) {
  */
 TEST_F(SpeakerManagerTest, testNullExceptionSender) {
     std::vector<std::shared_ptr<SpeakerInterface>> speakers{
-        std::make_shared<MockSpeakerInterface>(SpeakerInterface::Type::AVS_SYNCED)};
+        std::make_shared<MockSpeakerInterface>(SpeakerInterface::Type::AVS_SPEAKER_VOLUME)};
 
     m_speakerManager = SpeakerManager::create(speakers, m_mockContextManager, m_mockMessageSender, nullptr);
 
@@ -304,7 +223,7 @@ TEST_F(SpeakerManagerTest, testNullExceptionSender) {
 TEST_F(SpeakerManagerTest, testNoSpeakers) {
     m_speakerManager = SpeakerManager::create({}, m_mockContextManager, m_mockMessageSender, m_mockExceptionSender);
 
-    ASSERT_EQ(m_speakerManager, nullptr);
+    ASSERT_NE(m_speakerManager, nullptr);
 }
 
 /**
@@ -315,7 +234,7 @@ TEST_F(SpeakerManagerTest, testContextManagerSetStateConstructor) {
         *m_mockContextManager,
         setState(VOLUME_STATE, generateVolumeStateJson(DEFAULT_SETTINGS), StateRefreshPolicy::NEVER, _))
         .Times(Exactly(1));
-    auto speaker = std::make_shared<NiceMock<MockSpeakerInterface>>(SpeakerInterface::Type::AVS_SYNCED);
+    auto speaker = std::make_shared<NiceMock<MockSpeakerInterface>>(SpeakerInterface::Type::AVS_SPEAKER_VOLUME);
     speaker->DelegateToReal();
 
     std::vector<std::shared_ptr<SpeakerInterface>> speakers{speaker};
@@ -327,7 +246,7 @@ TEST_F(SpeakerManagerTest, testContextManagerSetStateConstructor) {
  * Test setVolume with a value that's under the bounds. The operation should fail.
  */
 TEST_F(SpeakerManagerTest, testSetVolumeUnderBounds) {
-    auto speaker = std::make_shared<NiceMock<MockSpeakerInterface>>(SpeakerInterface::Type::AVS_SYNCED);
+    auto speaker = std::make_shared<NiceMock<MockSpeakerInterface>>(SpeakerInterface::Type::AVS_SPEAKER_VOLUME);
     speaker->DelegateToReal();
     EXPECT_CALL(*speaker, setVolume(_)).Times(Exactly(0));
 
@@ -339,7 +258,8 @@ TEST_F(SpeakerManagerTest, testSetVolumeUnderBounds) {
     EXPECT_CALL(*m_observer, onSpeakerSettingsChanged(_, _, _)).Times(Exactly(0));
     m_speakerManager->addSpeakerManagerObserver(m_observer);
 
-    std::future<bool> future = m_speakerManager->setVolume(SpeakerInterface::Type::AVS_SYNCED, AVS_SET_VOLUME_MIN - 1);
+    std::future<bool> future =
+        m_speakerManager->setVolume(SpeakerInterface::Type::AVS_SPEAKER_VOLUME, AVS_SET_VOLUME_MIN - 1);
     ASSERT_FALSE(future.get());
 }
 
@@ -347,7 +267,7 @@ TEST_F(SpeakerManagerTest, testSetVolumeUnderBounds) {
  * Test setVolume with a value that's over the bounds. The operation should fail.
  */
 TEST_F(SpeakerManagerTest, testSetVolumeOverBounds) {
-    auto speaker = std::make_shared<NiceMock<MockSpeakerInterface>>(SpeakerInterface::Type::AVS_SYNCED);
+    auto speaker = std::make_shared<NiceMock<MockSpeakerInterface>>(SpeakerInterface::Type::AVS_SPEAKER_VOLUME);
     speaker->DelegateToReal();
     EXPECT_CALL(*speaker, setVolume(_)).Times(Exactly(0));
     std::vector<std::shared_ptr<SpeakerInterface>> speakers = {speaker};
@@ -358,7 +278,8 @@ TEST_F(SpeakerManagerTest, testSetVolumeOverBounds) {
     EXPECT_CALL(*m_observer, onSpeakerSettingsChanged(_, _, _)).Times(Exactly(0));
     m_speakerManager->addSpeakerManagerObserver(m_observer);
 
-    std::future<bool> future = m_speakerManager->setVolume(SpeakerInterface::Type::AVS_SYNCED, AVS_SET_VOLUME_MAX + 1);
+    std::future<bool> future =
+        m_speakerManager->setVolume(SpeakerInterface::Type::AVS_SPEAKER_VOLUME, AVS_SET_VOLUME_MAX + 1);
     ASSERT_FALSE(future.get());
 }
 
@@ -366,7 +287,7 @@ TEST_F(SpeakerManagerTest, testSetVolumeOverBounds) {
  * Test adjustVolume with a value that's under the bounds. The operation should fail.
  */
 TEST_F(SpeakerManagerTest, testAdjustVolumeUnderBounds) {
-    auto speaker = std::make_shared<NiceMock<MockSpeakerInterface>>(SpeakerInterface::Type::AVS_SYNCED);
+    auto speaker = std::make_shared<NiceMock<MockSpeakerInterface>>(SpeakerInterface::Type::AVS_SPEAKER_VOLUME);
     speaker->DelegateToReal();
     EXPECT_CALL(*speaker, adjustVolume(_)).Times(Exactly(0));
     std::vector<std::shared_ptr<SpeakerInterface>> speakers = {speaker};
@@ -378,7 +299,7 @@ TEST_F(SpeakerManagerTest, testAdjustVolumeUnderBounds) {
     m_speakerManager->addSpeakerManagerObserver(m_observer);
 
     std::future<bool> future =
-        m_speakerManager->adjustVolume(SpeakerInterface::Type::AVS_SYNCED, AVS_ADJUST_VOLUME_MIN - 1);
+        m_speakerManager->adjustVolume(SpeakerInterface::Type::AVS_SPEAKER_VOLUME, AVS_ADJUST_VOLUME_MIN - 1);
     ASSERT_FALSE(future.get());
 }
 
@@ -386,7 +307,7 @@ TEST_F(SpeakerManagerTest, testAdjustVolumeUnderBounds) {
  * Test adjustVolume with a value that's over the bounds. The operation should fail.
  */
 TEST_F(SpeakerManagerTest, testAdjustVolumeOverBounds) {
-    auto speaker = std::make_shared<NiceMock<MockSpeakerInterface>>(SpeakerInterface::Type::AVS_SYNCED);
+    auto speaker = std::make_shared<NiceMock<MockSpeakerInterface>>(SpeakerInterface::Type::AVS_SPEAKER_VOLUME);
     speaker->DelegateToReal();
     EXPECT_CALL(*speaker, adjustVolume(_)).Times(Exactly(0));
     std::vector<std::shared_ptr<SpeakerInterface>> speakers = {speaker};
@@ -398,7 +319,7 @@ TEST_F(SpeakerManagerTest, testAdjustVolumeOverBounds) {
     m_speakerManager->addSpeakerManagerObserver(m_observer);
 
     std::future<bool> future =
-        m_speakerManager->adjustVolume(SpeakerInterface::Type::AVS_SYNCED, AVS_ADJUST_VOLUME_MAX + 1);
+        m_speakerManager->adjustVolume(SpeakerInterface::Type::AVS_SPEAKER_VOLUME, AVS_ADJUST_VOLUME_MAX + 1);
     ASSERT_FALSE(future.get());
 }
 
@@ -406,11 +327,11 @@ TEST_F(SpeakerManagerTest, testAdjustVolumeOverBounds) {
  * Test setVolume when the speaker interfaces are out of sync. The operation should fail.
  */
 TEST_F(SpeakerManagerTest, testSetVolumeOutOfSync) {
-    auto speaker = std::make_shared<NiceMock<MockSpeakerInterface>>(SpeakerInterface::Type::AVS_SYNCED);
+    auto speaker = std::make_shared<NiceMock<MockSpeakerInterface>>(SpeakerInterface::Type::AVS_SPEAKER_VOLUME);
     speaker->DelegateToReal();
 
-    auto speaker2 = std::make_shared<NiceMock<MockSpeakerInterface>>(SpeakerInterface::Type::AVS_SYNCED);
-    EXPECT_CALL(*speaker2, getSpeakerType()).WillRepeatedly(Return(SpeakerInterface::Type::AVS_SYNCED));
+    auto speaker2 = std::make_shared<NiceMock<MockSpeakerInterface>>(SpeakerInterface::Type::AVS_SPEAKER_VOLUME);
+    EXPECT_CALL(*speaker2, getSpeakerType()).WillRepeatedly(Return(SpeakerInterface::Type::AVS_SPEAKER_VOLUME));
     EXPECT_CALL(*speaker2, setVolume(_)).WillRepeatedly(Return(true));
     // Set speaker to be out of sync.
     EXPECT_CALL(*speaker2, getSpeakerSettings(_)).WillRepeatedly(Return(false));
@@ -423,7 +344,8 @@ TEST_F(SpeakerManagerTest, testSetVolumeOutOfSync) {
     EXPECT_CALL(*m_observer, onSpeakerSettingsChanged(_, _, _)).Times(Exactly(0));
     m_speakerManager->addSpeakerManagerObserver(m_observer);
 
-    std::future<bool> future = m_speakerManager->setVolume(SpeakerInterface::Type::AVS_SYNCED, AVS_SET_VOLUME_MAX);
+    std::future<bool> future =
+        m_speakerManager->setVolume(SpeakerInterface::Type::AVS_SPEAKER_VOLUME, AVS_SET_VOLUME_MAX);
     ASSERT_FALSE(future.get());
 }
 
@@ -431,11 +353,11 @@ TEST_F(SpeakerManagerTest, testSetVolumeOutOfSync) {
  * Test adjustVolume when the speaker interfaces are out of sync. The operation should fail.
  */
 TEST_F(SpeakerManagerTest, testAdjustVolumeOutOfSync) {
-    auto speaker = std::make_shared<NiceMock<MockSpeakerInterface>>(SpeakerInterface::Type::AVS_SYNCED);
+    auto speaker = std::make_shared<NiceMock<MockSpeakerInterface>>(SpeakerInterface::Type::AVS_SPEAKER_VOLUME);
     speaker->DelegateToReal();
 
-    auto speaker2 = std::make_shared<NiceMock<MockSpeakerInterface>>(SpeakerInterface::Type::AVS_SYNCED);
-    EXPECT_CALL(*speaker2, getSpeakerType()).WillRepeatedly(Return(SpeakerInterface::Type::AVS_SYNCED));
+    auto speaker2 = std::make_shared<NiceMock<MockSpeakerInterface>>(SpeakerInterface::Type::AVS_SPEAKER_VOLUME);
+    EXPECT_CALL(*speaker2, getSpeakerType()).WillRepeatedly(Return(SpeakerInterface::Type::AVS_SPEAKER_VOLUME));
     EXPECT_CALL(*speaker2, adjustVolume(_)).WillRepeatedly(Return(true));
     // Set speaker to be out of sync.
     EXPECT_CALL(*speaker2, getSpeakerSettings(_)).WillRepeatedly(Return(false));
@@ -449,7 +371,7 @@ TEST_F(SpeakerManagerTest, testAdjustVolumeOutOfSync) {
     m_speakerManager->addSpeakerManagerObserver(m_observer);
 
     std::future<bool> future =
-        m_speakerManager->adjustVolume(SpeakerInterface::Type::AVS_SYNCED, AVS_ADJUST_VOLUME_MAX);
+        m_speakerManager->adjustVolume(SpeakerInterface::Type::AVS_SPEAKER_VOLUME, AVS_ADJUST_VOLUME_MAX);
     ASSERT_FALSE(future.get());
 }
 
@@ -457,11 +379,11 @@ TEST_F(SpeakerManagerTest, testAdjustVolumeOutOfSync) {
  * Test setMute when the speaker interfaces are out of sync. The operation should fail.
  */
 TEST_F(SpeakerManagerTest, testSetMuteOutOfSync) {
-    auto speaker = std::make_shared<NiceMock<MockSpeakerInterface>>(SpeakerInterface::Type::AVS_SYNCED);
+    auto speaker = std::make_shared<NiceMock<MockSpeakerInterface>>(SpeakerInterface::Type::AVS_SPEAKER_VOLUME);
     speaker->DelegateToReal();
 
-    auto speaker2 = std::make_shared<NiceMock<MockSpeakerInterface>>(SpeakerInterface::Type::AVS_SYNCED);
-    EXPECT_CALL(*speaker2, getSpeakerType()).WillRepeatedly(Return(SpeakerInterface::Type::AVS_SYNCED));
+    auto speaker2 = std::make_shared<NiceMock<MockSpeakerInterface>>(SpeakerInterface::Type::AVS_SPEAKER_VOLUME);
+    EXPECT_CALL(*speaker2, getSpeakerType()).WillRepeatedly(Return(SpeakerInterface::Type::AVS_SPEAKER_VOLUME));
     EXPECT_CALL(*speaker2, setMute(_)).WillRepeatedly(Return(true));
     // Set speaker to be out of sync.
     EXPECT_CALL(*speaker2, getSpeakerSettings(_)).WillRepeatedly(Return(false));
@@ -474,7 +396,7 @@ TEST_F(SpeakerManagerTest, testSetMuteOutOfSync) {
     EXPECT_CALL(*m_observer, onSpeakerSettingsChanged(_, _, _)).Times(Exactly(0));
     m_speakerManager->addSpeakerManagerObserver(m_observer);
 
-    std::future<bool> future = m_speakerManager->setMute(SpeakerInterface::Type::AVS_SYNCED, MUTE);
+    std::future<bool> future = m_speakerManager->setMute(SpeakerInterface::Type::AVS_SPEAKER_VOLUME, MUTE);
     ASSERT_FALSE(future.get());
 }
 
@@ -482,11 +404,11 @@ TEST_F(SpeakerManagerTest, testSetMuteOutOfSync) {
  * Test getSpeakerSettings when speakers are out of sync. The operation should fail.
  */
 TEST_F(SpeakerManagerTest, testGetSpeakerSettingsSpeakersOutOfSync) {
-    auto speaker = std::make_shared<NiceMock<MockSpeakerInterface>>(SpeakerInterface::Type::AVS_SYNCED);
+    auto speaker = std::make_shared<NiceMock<MockSpeakerInterface>>(SpeakerInterface::Type::AVS_SPEAKER_VOLUME);
     speaker->DelegateToReal();
 
-    auto speaker2 = std::make_shared<NiceMock<MockSpeakerInterface>>(SpeakerInterface::Type::AVS_SYNCED);
-    EXPECT_CALL(*speaker2, getSpeakerType()).WillRepeatedly(Return(SpeakerInterface::Type::AVS_SYNCED));
+    auto speaker2 = std::make_shared<NiceMock<MockSpeakerInterface>>(SpeakerInterface::Type::AVS_SPEAKER_VOLUME);
+    EXPECT_CALL(*speaker2, getSpeakerType()).WillRepeatedly(Return(SpeakerInterface::Type::AVS_SPEAKER_VOLUME));
     // Set speaker to be out of sync.
     EXPECT_CALL(*speaker2, getSpeakerSettings(_)).WillRepeatedly(Return(false));
 
@@ -499,7 +421,8 @@ TEST_F(SpeakerManagerTest, testGetSpeakerSettingsSpeakersOutOfSync) {
     m_speakerManager->addSpeakerManagerObserver(m_observer);
 
     SpeakerInterface::SpeakerSettings settings;
-    std::future<bool> future = m_speakerManager->getSpeakerSettings(SpeakerInterface::Type::AVS_SYNCED, &settings);
+    std::future<bool> future =
+        m_speakerManager->getSpeakerSettings(SpeakerInterface::Type::AVS_SPEAKER_VOLUME, &settings);
     ASSERT_FALSE(future.get());
 }
 
@@ -508,7 +431,7 @@ TEST_F(SpeakerManagerTest, testGetSpeakerSettingsSpeakersOutOfSync) {
  */
 TEST_F(SpeakerManagerTest, testGetConfiguration) {
     std::shared_ptr<SpeakerInterface> speaker =
-        std::make_shared<NiceMock<MockSpeakerInterface>>(SpeakerInterface::Type::AVS_SYNCED);
+        std::make_shared<NiceMock<MockSpeakerInterface>>(SpeakerInterface::Type::AVS_SPEAKER_VOLUME);
 
     m_speakerManager =
         SpeakerManager::create({speaker}, m_mockContextManager, m_mockMessageSender, m_mockExceptionSender);
@@ -523,7 +446,7 @@ TEST_F(SpeakerManagerTest, testGetConfiguration) {
  * Test that adding a null observer does not cause any errors in the SpeakerManager.
  */
 TEST_F(SpeakerManagerTest, testAddNullObserver) {
-    auto speaker = std::make_shared<NiceMock<MockSpeakerInterface>>(SpeakerInterface::Type::AVS_SYNCED);
+    auto speaker = std::make_shared<NiceMock<MockSpeakerInterface>>(SpeakerInterface::Type::AVS_SPEAKER_VOLUME);
     speaker->DelegateToReal();
 
     m_speakerManager =
@@ -531,16 +454,16 @@ TEST_F(SpeakerManagerTest, testAddNullObserver) {
     m_speakerManager->addSpeakerManagerObserver(nullptr);
     EXPECT_CALL(*m_mockMessageSender, sendMessage(_)).Times(Exactly(3));
 
-    m_speakerManager->setVolume(SpeakerInterface::Type::AVS_SYNCED, AVS_SET_VOLUME_MAX).wait();
-    m_speakerManager->adjustVolume(SpeakerInterface::Type::AVS_SYNCED, AVS_ADJUST_VOLUME_MAX).wait();
-    m_speakerManager->setMute(SpeakerInterface::Type::AVS_SYNCED, MUTE).wait();
+    m_speakerManager->setVolume(SpeakerInterface::Type::AVS_SPEAKER_VOLUME, AVS_SET_VOLUME_MAX).wait();
+    m_speakerManager->adjustVolume(SpeakerInterface::Type::AVS_SPEAKER_VOLUME, AVS_ADJUST_VOLUME_MAX).wait();
+    m_speakerManager->setMute(SpeakerInterface::Type::AVS_SPEAKER_VOLUME, MUTE).wait();
 }
 
 /**
  * Test that removing an observer works correctly.
  */
 TEST_F(SpeakerManagerTest, testRemoveSpeakerManagerObserver) {
-    auto speaker = std::make_shared<NiceMock<MockSpeakerInterface>>(SpeakerInterface::Type::AVS_SYNCED);
+    auto speaker = std::make_shared<NiceMock<MockSpeakerInterface>>(SpeakerInterface::Type::AVS_SPEAKER_VOLUME);
     speaker->DelegateToReal();
 
     EXPECT_CALL(*m_observer, onSpeakerSettingsChanged(_, _, _)).Times(Exactly(0));
@@ -551,16 +474,16 @@ TEST_F(SpeakerManagerTest, testRemoveSpeakerManagerObserver) {
     m_speakerManager->addSpeakerManagerObserver(m_observer);
     m_speakerManager->removeSpeakerManagerObserver(m_observer);
 
-    m_speakerManager->setVolume(SpeakerInterface::Type::AVS_SYNCED, AVS_SET_VOLUME_MAX).wait();
-    m_speakerManager->adjustVolume(SpeakerInterface::Type::AVS_SYNCED, AVS_ADJUST_VOLUME_MAX).wait();
-    m_speakerManager->setMute(SpeakerInterface::Type::AVS_SYNCED, MUTE).wait();
+    m_speakerManager->setVolume(SpeakerInterface::Type::AVS_SPEAKER_VOLUME, AVS_SET_VOLUME_MAX).wait();
+    m_speakerManager->adjustVolume(SpeakerInterface::Type::AVS_SPEAKER_VOLUME, AVS_ADJUST_VOLUME_MAX).wait();
+    m_speakerManager->setMute(SpeakerInterface::Type::AVS_SPEAKER_VOLUME, MUTE).wait();
 }
 
 /**
  * Test that removing a null observer does not cause any errors in the SpeakerManager.
  */
 TEST_F(SpeakerManagerTest, testRemoveNullObserver) {
-    auto speaker = std::make_shared<NiceMock<MockSpeakerInterface>>(SpeakerInterface::Type::AVS_SYNCED);
+    auto speaker = std::make_shared<NiceMock<MockSpeakerInterface>>(SpeakerInterface::Type::AVS_SPEAKER_VOLUME);
     speaker->DelegateToReal();
 
     EXPECT_CALL(*m_mockMessageSender, sendMessage(_)).Times(Exactly(3));
@@ -569,9 +492,9 @@ TEST_F(SpeakerManagerTest, testRemoveNullObserver) {
         SpeakerManager::create({speaker}, m_mockContextManager, m_mockMessageSender, m_mockExceptionSender);
     m_speakerManager->removeSpeakerManagerObserver(nullptr);
 
-    m_speakerManager->setVolume(SpeakerInterface::Type::AVS_SYNCED, AVS_SET_VOLUME_MAX).wait();
-    m_speakerManager->adjustVolume(SpeakerInterface::Type::AVS_SYNCED, AVS_ADJUST_VOLUME_MAX).wait();
-    m_speakerManager->setMute(SpeakerInterface::Type::AVS_SYNCED, MUTE).wait();
+    m_speakerManager->setVolume(SpeakerInterface::Type::AVS_SPEAKER_VOLUME, AVS_SET_VOLUME_MAX).wait();
+    m_speakerManager->adjustVolume(SpeakerInterface::Type::AVS_SPEAKER_VOLUME, AVS_ADJUST_VOLUME_MAX).wait();
+    m_speakerManager->setMute(SpeakerInterface::Type::AVS_SPEAKER_VOLUME, MUTE).wait();
 }
 
 /**
@@ -583,29 +506,29 @@ INSTANTIATE_TEST_CASE_P(
     // clang-format off
     ::testing::Values(
         std::vector<SpeakerInterface::Type>{
-            SpeakerInterface::Type::AVS_SYNCED
+            SpeakerInterface::Type::AVS_SPEAKER_VOLUME
         },
         std::vector<SpeakerInterface::Type>{
-            SpeakerInterface::Type::LOCAL
+            SpeakerInterface::Type::AVS_ALERTS_VOLUME
         },
         std::vector<SpeakerInterface::Type>{
-            SpeakerInterface::Type::AVS_SYNCED,
-            SpeakerInterface::Type::AVS_SYNCED
+            SpeakerInterface::Type::AVS_SPEAKER_VOLUME,
+            SpeakerInterface::Type::AVS_SPEAKER_VOLUME
         },
         std::vector<SpeakerInterface::Type>{
-            SpeakerInterface::Type::LOCAL,
-            SpeakerInterface::Type::LOCAL,
+            SpeakerInterface::Type::AVS_ALERTS_VOLUME,
+            SpeakerInterface::Type::AVS_ALERTS_VOLUME,
         },
         std::vector<SpeakerInterface::Type>{
-            SpeakerInterface::Type::AVS_SYNCED,
-            SpeakerInterface::Type::LOCAL,
-            SpeakerInterface::Type::AVS_SYNCED,
-            SpeakerInterface::Type::LOCAL
+            SpeakerInterface::Type::AVS_SPEAKER_VOLUME,
+            SpeakerInterface::Type::AVS_ALERTS_VOLUME,
+            SpeakerInterface::Type::AVS_SPEAKER_VOLUME,
+            SpeakerInterface::Type::AVS_ALERTS_VOLUME
         }));
     // clang-format off
 
 /**
- * Parameterized test for setVolume. One event should be sent if an AVS_SYNCED typed speaker is modified.
+ * Parameterized test for setVolume. One event should be sent if an AVS_SPEAKER_VOLUME typed speaker is modified.
  */
 TEST_P(SpeakerManagerTest, testSetVolume) {
     std::vector<std::shared_ptr<SpeakerInterface>> speakers;
@@ -625,7 +548,7 @@ TEST_P(SpeakerManagerTest, testSetVolume) {
 
     for (auto type : getUniqueTypes(speakers)) {
         EXPECT_CALL(*m_observer, onSpeakerSettingsChanged(SpeakerManagerObserverInterface::Source::LOCAL_API, type, expectedSettings)).Times(Exactly(1));
-        if (SpeakerInterface::Type::AVS_SYNCED == type) {
+        if (SpeakerInterface::Type::AVS_SPEAKER_VOLUME == type) {
             EXPECT_CALL(*m_mockMessageSender, sendMessage(_)).Times(Exactly(1));
             EXPECT_CALL(*m_mockContextManager, setState(VOLUME_STATE, _, StateRefreshPolicy::NEVER, _)).Times(AnyNumber());
             EXPECT_CALL(*m_mockContextManager, setState(VOLUME_STATE, generateVolumeStateJson(expectedSettings), StateRefreshPolicy::NEVER, _)).Times(Exactly(1));
@@ -637,7 +560,7 @@ TEST_P(SpeakerManagerTest, testSetVolume) {
 }
 
 /**
- * Parameterized test for adjustVolume. One event should be sent if an AVS_SYNCED typed speaker is modified.
+ * Parameterized test for adjustVolume. One event should be sent if an AVS_SPEAKER_VOLUME typed speaker is modified.
  */
 TEST_P(SpeakerManagerTest, testAdjustVolume) {
     std::vector<std::shared_ptr<SpeakerInterface>> speakers;
@@ -658,7 +581,7 @@ TEST_P(SpeakerManagerTest, testAdjustVolume) {
 
     for (auto type : getUniqueTypes(speakers)) {
         EXPECT_CALL(*m_observer, onSpeakerSettingsChanged(SpeakerManagerObserverInterface::Source::LOCAL_API, type, expectedSettings)).Times(Exactly(1));
-        if (SpeakerInterface::Type::AVS_SYNCED == type) {
+        if (SpeakerInterface::Type::AVS_SPEAKER_VOLUME == type) {
             EXPECT_CALL(*m_mockMessageSender, sendMessage(_)).Times(Exactly(1));
             EXPECT_CALL(*m_mockContextManager, setState(VOLUME_STATE, _, StateRefreshPolicy::NEVER, _)).Times(AnyNumber());
             EXPECT_CALL(*m_mockContextManager, setState(VOLUME_STATE, generateVolumeStateJson(expectedSettings), StateRefreshPolicy::NEVER, _)).Times(Exactly(1));
@@ -670,7 +593,7 @@ TEST_P(SpeakerManagerTest, testAdjustVolume) {
 }
 
 /**
- * Parameterized test for setMute. One event should be sent if an AVS_SYNCED typed speaker is modified.
+ * Parameterized test for setMute. One event should be sent if an AVS_SPEAKER_VOLUME typed speaker is modified.
  */
 TEST_P(SpeakerManagerTest, testSetMute) {
     std::vector<std::shared_ptr<SpeakerInterface>> speakers;
@@ -690,7 +613,7 @@ TEST_P(SpeakerManagerTest, testSetMute) {
 
     for (auto type : getUniqueTypes(speakers)) {
         EXPECT_CALL(*m_observer, onSpeakerSettingsChanged(SpeakerManagerObserverInterface::Source::LOCAL_API, type, expectedSettings)).Times(Exactly(1));
-        if (SpeakerInterface::Type::AVS_SYNCED == type) {
+        if (SpeakerInterface::Type::AVS_SPEAKER_VOLUME == type) {
             EXPECT_CALL(*m_mockMessageSender, sendMessage(_)).Times(Exactly(1));
             EXPECT_CALL(*m_mockContextManager, setState(VOLUME_STATE, _, StateRefreshPolicy::NEVER, _)).Times(AnyNumber());
             EXPECT_CALL(*m_mockContextManager, setState(VOLUME_STATE, generateVolumeStateJson(expectedSettings), StateRefreshPolicy::NEVER, _)).Times(Exactly(1));
@@ -734,8 +657,8 @@ TEST_P(SpeakerManagerTest, testGetSpeakerSettings) {
 
 /**
  * Tests SetVolume Directive. Expect that the volume is unmuted and set, as well at most one
- * event is sent. In the event there are no AVS_SYNCED speakers registered, no event will be sent.
- * In addition, only AVS_SYNCED speakers should be affected.
+ * event is sent. In the event there are no AVS_SPEAKER_VOLUME speakers registered, no event will be sent.
+ * In addition, only AVS_SPEAKER_VOLUME speakers should be affected.
  */
 TEST_P(SpeakerManagerTest, testSetVolumeDirective) {
     std::vector<std::shared_ptr<SpeakerInterface>> speakers;
@@ -747,7 +670,7 @@ TEST_P(SpeakerManagerTest, testSetVolumeDirective) {
         auto speaker = std::make_shared<NiceMock<MockSpeakerInterface>>(typeOfSpeaker);
         speaker->DelegateToReal();
         int timesCalled = 0;
-        if (typeOfSpeaker == SpeakerInterface::Type::AVS_SYNCED) {
+        if (typeOfSpeaker == SpeakerInterface::Type::AVS_SPEAKER_VOLUME) {
             timesCalled = 1;
         }
 
@@ -760,10 +683,10 @@ TEST_P(SpeakerManagerTest, testSetVolumeDirective) {
     auto uniqueTypes = getUniqueTypes(speakers);
 
     // Creation expectations based on type.
-    if (uniqueTypes.count(SpeakerInterface::Type::AVS_SYNCED)) {
+    if (uniqueTypes.count(SpeakerInterface::Type::AVS_SPEAKER_VOLUME)) {
         eventsSent = 1;
 
-        EXPECT_CALL(*m_observer, onSpeakerSettingsChanged(SpeakerManagerObserverInterface::Source::DIRECTIVE, SpeakerInterface::Type::AVS_SYNCED, expectedSettings)).Times(Exactly(1));
+        EXPECT_CALL(*m_observer, onSpeakerSettingsChanged(SpeakerManagerObserverInterface::Source::DIRECTIVE, SpeakerInterface::Type::AVS_SPEAKER_VOLUME, expectedSettings)).Times(Exactly(1));
         EXPECT_CALL(*m_mockContextManager, setState(VOLUME_STATE, _, StateRefreshPolicy::NEVER, _)).Times(AnyNumber());
         EXPECT_CALL(*m_mockContextManager, setState(VOLUME_STATE, generateVolumeStateJson(expectedSettings), StateRefreshPolicy::NEVER, _)).Times(Exactly(1));
     } else {
@@ -792,8 +715,8 @@ TEST_P(SpeakerManagerTest, testSetVolumeDirective) {
 
 /**
  * Tests AdjustVolume Directive. Expect that the volume is unmuted and adjusted, as well at most one
- * event is sent. In the event there are no AVS_SYNCED speakers registered, no event will be sent.
- * In addition, only AVS_SYNCED speakers should be affected.
+ * event is sent. In the event there are no AVS_SPEAKER_VOLUME speakers registered, no event will be sent.
+ * In addition, only AVS_SPEAKER_VOLUME speakers should be affected.
  */
 TEST_P(SpeakerManagerTest, testAdjustVolumeDirective) {
     std::vector<std::shared_ptr<SpeakerInterface>> speakers;
@@ -805,7 +728,7 @@ TEST_P(SpeakerManagerTest, testAdjustVolumeDirective) {
         auto speaker = std::make_shared<NiceMock<MockSpeakerInterface>>(typeOfSpeaker);
         speaker->DelegateToReal();
         int timesCalled = 0;
-        if (typeOfSpeaker == SpeakerInterface::Type::AVS_SYNCED) {
+        if (typeOfSpeaker == SpeakerInterface::Type::AVS_SPEAKER_VOLUME) {
             timesCalled = 1;
         }
 
@@ -818,10 +741,10 @@ TEST_P(SpeakerManagerTest, testAdjustVolumeDirective) {
     auto uniqueTypes = getUniqueTypes(speakers);
 
     // Creation expectations based on type.
-    if (uniqueTypes.count(SpeakerInterface::Type::AVS_SYNCED)) {
+    if (uniqueTypes.count(SpeakerInterface::Type::AVS_SPEAKER_VOLUME)) {
         eventsSent = 1;
 
-        EXPECT_CALL(*m_observer, onSpeakerSettingsChanged(SpeakerManagerObserverInterface::Source::DIRECTIVE, SpeakerInterface::Type::AVS_SYNCED, expectedSettings)).Times(Exactly(1));
+        EXPECT_CALL(*m_observer, onSpeakerSettingsChanged(SpeakerManagerObserverInterface::Source::DIRECTIVE, SpeakerInterface::Type::AVS_SPEAKER_VOLUME, expectedSettings)).Times(Exactly(1));
         EXPECT_CALL(*m_mockContextManager, setState(VOLUME_STATE, _, StateRefreshPolicy::NEVER, _)).Times(AnyNumber());
         EXPECT_CALL(*m_mockContextManager, setState(VOLUME_STATE, generateVolumeStateJson(expectedSettings), StateRefreshPolicy::NEVER, _)).Times(Exactly(1));
     } else {
@@ -850,8 +773,8 @@ TEST_P(SpeakerManagerTest, testAdjustVolumeDirective) {
 
 /**
  * Tests SetMute Directive. Expect that the volume is muted, as well at most one
- * event is sent. In the event there are no AVS_SYNCED speakers registered, no event will be sent.
- * In addition, only AVS_SYNCED speakers should be affected.
+ * event is sent. In the event there are no AVS_SPEAKER_VOLUME speakers registered, no event will be sent.
+ * In addition, only AVS_SPEAKER_VOLUME speakers should be affected.
  */
 TEST_P(SpeakerManagerTest, testSetMuteDirective) {
     std::vector<std::shared_ptr<SpeakerInterface>> speakers;
@@ -863,7 +786,7 @@ TEST_P(SpeakerManagerTest, testSetMuteDirective) {
         auto speaker = std::make_shared<NiceMock<MockSpeakerInterface>>(typeOfSpeaker);
         speaker->DelegateToReal();
         int timesCalled = 0;
-        if (typeOfSpeaker == SpeakerInterface::Type::AVS_SYNCED) {
+        if (typeOfSpeaker == SpeakerInterface::Type::AVS_SPEAKER_VOLUME) {
             timesCalled = 1;
         }
 
@@ -875,10 +798,10 @@ TEST_P(SpeakerManagerTest, testSetMuteDirective) {
     auto uniqueTypes = getUniqueTypes(speakers);
 
     // Creation expectations based on type.
-    if (uniqueTypes.count(SpeakerInterface::Type::AVS_SYNCED)) {
+    if (uniqueTypes.count(SpeakerInterface::Type::AVS_SPEAKER_VOLUME)) {
         eventsSent = 1;
 
-        EXPECT_CALL(*m_observer, onSpeakerSettingsChanged(SpeakerManagerObserverInterface::Source::DIRECTIVE, SpeakerInterface::Type::AVS_SYNCED, expectedSettings)).Times(Exactly(1));
+        EXPECT_CALL(*m_observer, onSpeakerSettingsChanged(SpeakerManagerObserverInterface::Source::DIRECTIVE, SpeakerInterface::Type::AVS_SPEAKER_VOLUME, expectedSettings)).Times(Exactly(1));
         EXPECT_CALL(*m_mockContextManager, setState(VOLUME_STATE, _, StateRefreshPolicy::NEVER, _)).Times(AnyNumber());
         EXPECT_CALL(*m_mockContextManager, setState(VOLUME_STATE, generateVolumeStateJson(expectedSettings), StateRefreshPolicy::NEVER, _)).Times(Exactly(1));
     } else {

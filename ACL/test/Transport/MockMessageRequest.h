@@ -1,7 +1,5 @@
 /*
- * MockMessageRequest.h
- *
- * Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright 2017-2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License").
  * You may not use this file except in compliance with the License.
@@ -14,6 +12,7 @@
  * express or implied. See the License for the specific language governing
  * permissions and limitations under the License.
  */
+
 #ifndef ALEXA_CLIENT_SDK_ACL_TEST_TRANSPORT_MOCKMESSAGEREQUEST_H_
 #define ALEXA_CLIENT_SDK_ACL_TEST_TRANSPORT_MOCKMESSAGEREQUEST_H_
 
@@ -37,7 +36,7 @@ public:
     /**
      * Constructor.
      */
-    MockMessageRequest() : avsCommon::avs::MessageRequest{"", nullptr} {
+    MockMessageRequest() : avsCommon::avs::MessageRequest{""} {
     }
     MOCK_METHOD1(exceptionReceived, void(const std::string& exceptionMessage));
     MOCK_METHOD1(sendCompleted, void(avsCommon::sdkInterfaces::MessageRequestObserverInterface::Status status));

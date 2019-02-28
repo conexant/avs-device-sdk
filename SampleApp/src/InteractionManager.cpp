@@ -1,7 +1,5 @@
 /*
- * InteractionManager.cpp
- *
- * Copyright (c) 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright 2017-2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License").
  * You may not use this file except in compliance with the License.
@@ -15,22 +13,34 @@
  * permissions and limitations under the License.
  */
 
+#include "ESP/ESPDataProviderInterface.h"
+#include "RegistrationManager/CustomerDataManager.h"
 #include "SampleApp/InteractionManager.h"
 
 namespace alexaClientSDK {
 namespace sampleApp {
 
+using namespace avsCommon::avs;
+
 InteractionManager::InteractionManager(
     std::shared_ptr<defaultClient::DefaultClient> client,
-    std::shared_ptr<sampleApp::PortAudioMicrophoneWrapper> micWrapper,
+    std::shared_ptr<applicationUtilities::resources::audio::MicrophoneInterface> micWrapper,
     std::shared_ptr<sampleApp::UIManager> userInterface,
     capabilityAgents::aip::AudioProvider holdToTalkAudioProvider,
     capabilityAgents::aip::AudioProvider tapToTalkAudioProvider,
-    capabilityAgents::aip::AudioProvider wakeWordAudioProvider) :
+    std::shared_ptr<sampleApp::GuiRenderer> guiRenderer,
+    capabilityAgents::aip::AudioProvider wakeWordAudioProvider,
+    std::shared_ptr<esp::ESPDataProviderInterface> espProvider,
+    std::shared_ptr<esp::ESPDataModifierInterface> espModifier,
+    std::shared_ptr<avsCommon::sdkInterfaces::CallManagerInterface> callManager) :
         RequiresShutdown{"InteractionManager"},
         m_client{client},
         m_micWrapper{micWrapper},
         m_userInterface{userInterface},
+        m_guiRenderer{guiRenderer},
+        m_espProvider{espProvider},
+        m_espModifier{espModifier},
+        m_callManager{callManager},
         m_holdToTalkAudioProvider{holdToTalkAudioProvider},
         m_tapToTalkAudioProvider{tapToTalkAudioProvider},
         m_wakeWordAudioProvider{wakeWordAudioProvider},
@@ -49,6 +59,10 @@ void InteractionManager::begin() {
 
 void InteractionManager::help() {
     m_executor.submit([this]() { m_userInterface->printHelpScreen(); });
+}
+
+void InteractionManager::limitedHelp() {
+    m_executor.submit([this]() { m_userInterface->printLimitedHelp(); });
 }
 
 void InteractionManager::settings() {
@@ -113,7 +127,6 @@ void InteractionManager::tap() {
             m_isTapOccurring = false;
             m_client->notifyOfTapToTalkEnd();
         }
-
     });
 }
 
@@ -122,23 +135,68 @@ void InteractionManager::stopForegroundActivity() {
 }
 
 void InteractionManager::playbackPlay() {
-    m_executor.submit([this]() { m_client->getPlaybackControllerInterface().playButtonPressed(); });
+    m_executor.submit([this]() { m_client->getPlaybackRouter()->buttonPressed(PlaybackButton::PLAY); });
 }
 
 void InteractionManager::playbackPause() {
-    m_executor.submit([this]() { m_client->getPlaybackControllerInterface().pauseButtonPressed(); });
+    m_executor.submit([this]() { m_client->getPlaybackRouter()->buttonPressed(PlaybackButton::PAUSE); });
 }
 
 void InteractionManager::playbackNext() {
-    m_executor.submit([this]() { m_client->getPlaybackControllerInterface().nextButtonPressed(); });
+    m_executor.submit([this]() { m_client->getPlaybackRouter()->buttonPressed(PlaybackButton::NEXT); });
 }
 
 void InteractionManager::playbackPrevious() {
-    m_executor.submit([this]() { m_client->getPlaybackControllerInterface().previousButtonPressed(); });
+    m_executor.submit([this]() { m_client->getPlaybackRouter()->buttonPressed(PlaybackButton::PREVIOUS); });
+}
+
+void InteractionManager::playbackSkipForward() {
+    m_executor.submit([this]() { m_client->getPlaybackRouter()->buttonPressed(PlaybackButton::SKIP_FORWARD); });
+}
+
+void InteractionManager::playbackSkipBackward() {
+    m_executor.submit([this]() { m_client->getPlaybackRouter()->buttonPressed(PlaybackButton::SKIP_BACKWARD); });
+}
+
+void InteractionManager::playbackShuffle() {
+    sendGuiToggleEvent(GuiRenderer::TOGGLE_NAME_SHUFFLE, PlaybackToggle::SHUFFLE);
+}
+
+void InteractionManager::playbackLoop() {
+    sendGuiToggleEvent(GuiRenderer::TOGGLE_NAME_LOOP, PlaybackToggle::LOOP);
+}
+
+void InteractionManager::playbackRepeat() {
+    sendGuiToggleEvent(GuiRenderer::TOGGLE_NAME_REPEAT, PlaybackToggle::REPEAT);
+}
+
+void InteractionManager::playbackThumbsUp() {
+    sendGuiToggleEvent(GuiRenderer::TOGGLE_NAME_THUMBSUP, PlaybackToggle::THUMBS_UP);
+}
+
+void InteractionManager::playbackThumbsDown() {
+    sendGuiToggleEvent(GuiRenderer::TOGGLE_NAME_THUMBSDOWN, PlaybackToggle::THUMBS_DOWN);
+}
+
+void InteractionManager::sendGuiToggleEvent(const std::string& toggleName, PlaybackToggle toggleType) {
+    bool action = false;
+    if (m_guiRenderer) {
+        action = !m_guiRenderer->getGuiToggleState(toggleName);
+    }
+    m_executor.submit(
+        [this, toggleType, action]() { m_client->getPlaybackRouter()->togglePressed(toggleType, action); });
 }
 
 void InteractionManager::speakerControl() {
     m_executor.submit([this]() { m_userInterface->printSpeakerControlScreen(); });
+}
+
+void InteractionManager::firmwareVersionControl() {
+    m_executor.submit([this]() { m_userInterface->printFirmwareVersionControlScreen(); });
+}
+
+void InteractionManager::setFirmwareVersion(avsCommon::sdkInterfaces::softwareInfo::FirmwareVersion firmwareVersion) {
+    m_executor.submit([this, firmwareVersion]() { m_client->setFirmwareVersion(firmwareVersion); });
 }
 
 void InteractionManager::volumeControl() {
@@ -169,6 +227,103 @@ void InteractionManager::setMute(avsCommon::sdkInterfaces::SpeakerInterface::Typ
     m_executor.submit([this, type, mute]() {
         std::future<bool> future = m_client->getSpeakerManager()->setMute(type, mute);
         future.get();
+    });
+}
+
+void InteractionManager::confirmResetDevice() {
+    m_executor.submit([this]() { m_userInterface->printResetConfirmation(); });
+}
+
+void InteractionManager::resetDevice() {
+    // This is a blocking operation. No interaction will be allowed during / after resetDevice
+    auto result = m_executor.submit([this]() {
+        m_client->getRegistrationManager()->logout();
+        m_userInterface->printResetWarning();
+    });
+    result.wait();
+}
+
+void InteractionManager::confirmReauthorizeDevice() {
+    m_executor.submit([this]() { m_userInterface->printReauthorizeConfirmation(); });
+}
+
+void InteractionManager::espControl() {
+    m_executor.submit([this]() {
+        if (m_espProvider) {
+            auto espData = m_espProvider->getESPData();
+            m_userInterface->printESPControlScreen(
+                m_espProvider->isEnabled(), espData.getVoiceEnergy(), espData.getAmbientEnergy());
+        } else {
+            m_userInterface->printESPNotSupported();
+        }
+    });
+}
+
+void InteractionManager::toggleESPSupport() {
+    m_executor.submit([this]() {
+        if (m_espProvider) {
+            m_espProvider->isEnabled() ? m_espProvider->disable() : m_espProvider->enable();
+        } else {
+            m_userInterface->printESPNotSupported();
+        }
+    });
+}
+
+void InteractionManager::setESPVoiceEnergy(const std::string& voiceEnergy) {
+    m_executor.submit([this, voiceEnergy]() {
+        if (m_espProvider) {
+            if (m_espModifier) {
+                m_espModifier->setVoiceEnergy(voiceEnergy);
+            } else {
+                m_userInterface->printESPDataOverrideNotSupported();
+            }
+        } else {
+            m_userInterface->printESPNotSupported();
+        }
+    });
+}
+
+void InteractionManager::setESPAmbientEnergy(const std::string& ambientEnergy) {
+    m_executor.submit([this, ambientEnergy]() {
+        if (m_espProvider) {
+            if (m_espModifier) {
+                m_espModifier->setAmbientEnergy(ambientEnergy);
+            } else {
+                m_userInterface->printESPDataOverrideNotSupported();
+            }
+        } else {
+            m_userInterface->printESPNotSupported();
+        }
+    });
+}
+
+void InteractionManager::commsControl() {
+    m_executor.submit([this]() {
+        if (m_client->isCommsEnabled()) {
+            m_userInterface->printCommsControlScreen();
+        } else {
+            m_userInterface->printCommsNotSupported();
+        }
+    });
+}
+
+void InteractionManager::acceptCall() {
+    m_executor.submit([this]() {
+        if (m_client->isCommsEnabled()) {
+            m_client->acceptCommsCall();
+        } else {
+            m_userInterface->printCommsNotSupported();
+        }
+    });
+}
+
+void InteractionManager::stopCall() {
+    m_executor.submit([this]() {
+        if (m_client->isCommsEnabled()) {
+            m_client->stopCommsCall();
+        } else {
+            m_userInterface->printCommsNotSupported();
+        }
     });
 }
 

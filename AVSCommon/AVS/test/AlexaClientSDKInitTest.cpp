@@ -1,7 +1,5 @@
 /*
- * AlexaClientSDKInitTest.cpp
- *
- * Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright 2017-2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License").
  * You may not use this file except in compliance with the License.
@@ -46,9 +44,9 @@ TEST(AlexaClientSDKInitTest, initializeNoJSONConfig) {
  * @note This test also validates whether libcurl supports HTTP2.
  */
 TEST(AlexaClientSDKInitTest, initializeInvalidJSONConfig) {
-    stringstream invalidJSON;
-    invalidJSON << "{";
-    ASSERT_FALSE(AlexaClientSDKInit::initialize({&invalidJSON}));
+    auto invalidJSON = std::shared_ptr<std::stringstream>(new std::stringstream());
+    (*invalidJSON) << "{";
+    ASSERT_FALSE(AlexaClientSDKInit::initialize({invalidJSON}));
 }
 
 /**
@@ -57,9 +55,9 @@ TEST(AlexaClientSDKInitTest, initializeInvalidJSONConfig) {
  * @note This test also validates whether libcurl supports HTTP2.
  */
 TEST(AlexaClientSDKInitTest, initializeValidJSONConfig) {
-    stringstream validJSON;
-    validJSON << R"({"key":"value"})";
-    ASSERT_TRUE(AlexaClientSDKInit::initialize({&validJSON}));
+    auto validJSON = std::shared_ptr<std::stringstream>(new std::stringstream());
+    (*validJSON) << R"({"key":"value"})";
+    ASSERT_TRUE(AlexaClientSDKInit::initialize({validJSON}));
     AlexaClientSDKInit::uninitialize();
 }
 

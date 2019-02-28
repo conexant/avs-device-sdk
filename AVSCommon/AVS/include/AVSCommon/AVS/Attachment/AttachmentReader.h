@@ -1,7 +1,5 @@
 /*
- * AttachmentReader.h
- *
- * Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright 2017-2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License").
  * You may not use this file except in compliance with the License.
@@ -20,6 +18,9 @@
 
 #include <chrono>
 #include <cstddef>
+#include <ostream>
+
+#include "AVSCommon/Utils/SDS/ReaderPolicy.h"
 
 namespace alexaClientSDK {
 namespace avsCommon {
@@ -32,19 +33,6 @@ namespace attachment {
 class AttachmentReader {
 public:
     /**
-     * An enum class to allow configuration of the type of reader.
-     */
-    enum class Policy {
-        /**
-         * A read of n bytes will not return until a number of bytes, equal to or less than n, are available,
-         * or a timeout occurs.
-         */
-        BLOCKING,
-        /// A read of n bytes will return immediately, whether n bytes were available or not.
-        NON_BLOCKING
-    };
-
-    /**
      * An enum class to communicate the possible states following a @c read() call.
      */
     enum class ReadStatus {
@@ -54,6 +42,9 @@ public:
         OK_WOULDBLOCK,
         /// On a request for n bytes, less than n bytes were available on a blocking read.
         OK_TIMEDOUT,
+        /// The writer has overwritten the new data on reader's current position. Reader position is reset
+        /// to current writer position.
+        OK_OVERRUN_RESET,
         /// The underlying data representation is no longer readable.
         CLOSED,
         /// The writer has corrupted the reader data.  The attachment is no longer valid.
@@ -84,7 +75,7 @@ public:
      * @param numBytes The size of the buffer in bytes.
      * @param[out] readStatus The out-parameter where the resulting state of the read will be expressed.
      * @param timeoutMs The timeout for this read call in milliseconds.  This value is only used for the @c BLOCKING
-     * reader policy.
+     * reader policy.  If this parameter is zero, there is no timeout and blocking reads will wait forever.
      * @return The number of bytes read as a result of this call.
      */
     virtual std::size_t read(
@@ -103,6 +94,13 @@ public:
     virtual bool seek(uint64_t offset) = 0;
 
     /**
+     * Utility function to return the number of bytes in an attachment.
+     *
+     * @return Number of unread bytes in the attachment by this attachment reader.
+     */
+    virtual uint64_t getNumUnreadBytes() = 0;
+
+    /**
      * The close function.  An implementation will take care of any resource management when a reader no longer
      * needs to use an attachment.
      *
@@ -110,6 +108,43 @@ public:
      */
     virtual void close(ClosePoint closePoint = ClosePoint::AFTER_DRAINING_CURRENT_BUFFER) = 0;
 };
+
+/**
+ * Write an @c Attachment::ReadStatus value to the given stream.
+ *
+ * @param stream The stream to write the value to.
+ * @param status The value to write to the stream as a string.
+ * @return The stream that was passed in and written to.
+ */
+inline std::ostream& operator<<(std::ostream& stream, const AttachmentReader::ReadStatus& status) {
+    switch (status) {
+        case AttachmentReader::ReadStatus::OK:
+            stream << "OK";
+            break;
+        case AttachmentReader::ReadStatus::OK_WOULDBLOCK:
+            stream << "OK_WOULDBLOCK";
+            break;
+        case AttachmentReader::ReadStatus::OK_TIMEDOUT:
+            stream << "OK_TIMEDOUT";
+            break;
+        case AttachmentReader::ReadStatus::OK_OVERRUN_RESET:
+            stream << "OK_OVERRUN_RESET";
+            break;
+        case AttachmentReader::ReadStatus::CLOSED:
+            stream << "CLOSED";
+            break;
+        case AttachmentReader::ReadStatus::ERROR_BYTES_LESS_THAN_WORD_SIZE:
+            stream << "ERROR_BYTES_LESS_THAN_WORD_SIZE";
+            break;
+        case AttachmentReader::ReadStatus::ERROR_OVERRUN:
+            stream << "ERROR_OVERRUN";
+            break;
+        case AttachmentReader::ReadStatus::ERROR_INTERNAL:
+            stream << "ERROR_INTERNAL";
+            break;
+    }
+    return stream;
+}
 
 }  // namespace attachment
 }  // namespace avs

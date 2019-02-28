@@ -1,7 +1,5 @@
 /*
- * AudioPlayer.h
- *
- * Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright 2017-2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License").
  * You may not use this file except in compliance with the License.
@@ -22,20 +20,25 @@
 
 #include <AVSCommon/AVS/CapabilityAgent.h>
 #include <AVSCommon/AVS/PlayerActivity.h>
+#include <AVSCommon/AVS/CapabilityConfiguration.h>
+#include <AVSCommon/SDKInterfaces/CapabilityConfigurationInterface.h>
 #include <AVSCommon/SDKInterfaces/AudioPlayerInterface.h>
 #include <AVSCommon/SDKInterfaces/ContextManagerInterface.h>
 #include <AVSCommon/SDKInterfaces/FocusManagerInterface.h>
 #include <AVSCommon/SDKInterfaces/MessageSenderInterface.h>
+#include <AVSCommon/SDKInterfaces/PlaybackRouterInterface.h>
 #include <AVSCommon/Utils/MediaPlayer/ErrorTypes.h>
 #include <AVSCommon/Utils/MediaPlayer/MediaPlayerInterface.h>
 #include <AVSCommon/Utils/MediaPlayer/MediaPlayerObserverInterface.h>
 #include <AVSCommon/Utils/RequiresShutdown.h>
 #include <AVSCommon/Utils/Threading/Executor.h>
 #include <AVSCommon/Utils/Timing/Timer.h>
+#include <AVSCommon/Utils/Timing/TimeUtils.h>
 
 #include "AudioItem.h"
 #include "ClearBehavior.h"
 #include "PlayBehavior.h"
+#include "ProgressTimer.h"
 
 namespace alexaClientSDK {
 namespace capabilityAgents {
@@ -50,7 +53,9 @@ namespace audioPlayer {
  */
 class AudioPlayer
         : public avsCommon::avs::CapabilityAgent
+        , public ProgressTimer::ContextInterface
         , public avsCommon::sdkInterfaces::AudioPlayerInterface
+        , public avsCommon::sdkInterfaces::CapabilityConfigurationInterface
         , public avsCommon::utils::mediaPlayer::MediaPlayerObserverInterface
         , public avsCommon::utils::RequiresShutdown
         , public std::enable_shared_from_this<AudioPlayer> {
@@ -62,8 +67,8 @@ public:
      * @param messageSender The object to use for sending events.
      * @param focusManager The channel focus manager used to manage usage of the dialog channel.
      * @param contextManager The AVS Context manager used to generate system context for events.
-     * @param attachmentManager The instance of the @c AttachmentManagerInterface to use to read the attachment.
      * @param exceptionSender The object to use for sending AVS Exception messages.
+     * @param playbackRouter The @c PlaybackRouterInterface instance to use when @c AudioPlayer becomes active.
      * @return A @c std::shared_ptr to the new @c AudioPlayer instance.
      */
     static std::shared_ptr<AudioPlayer> create(
@@ -71,8 +76,8 @@ public:
         std::shared_ptr<avsCommon::sdkInterfaces::MessageSenderInterface> messageSender,
         std::shared_ptr<avsCommon::sdkInterfaces::FocusManagerInterface> focusManager,
         std::shared_ptr<avsCommon::sdkInterfaces::ContextManagerInterface> contextManager,
-        std::shared_ptr<avsCommon::avs::attachment::AttachmentManagerInterface> attachmentManager,
-        std::shared_ptr<avsCommon::sdkInterfaces::ExceptionEncounteredSenderInterface> exceptionSender);
+        std::shared_ptr<avsCommon::sdkInterfaces::ExceptionEncounteredSenderInterface> exceptionSender,
+        std::shared_ptr<avsCommon::sdkInterfaces::PlaybackRouterInterface> playbackRouter);
 
     /// @name StateProviderInterface Functions
     /// @{
@@ -108,11 +113,23 @@ public:
     void onTags(SourceId id, std::unique_ptr<const VectorOfTags> vectorOfTags) override;
     /// @}
 
+    /// @name ProgressTimer::ContextInterface methods
+    /// @{
+    void onProgressReportDelayElapsed() override;
+    void onProgressReportIntervalElapsed() override;
+    void requestProgress() override;
+    /// @}
+
     /// @name AudioPlayerInterface Functions
     /// @{
     void addObserver(std::shared_ptr<avsCommon::sdkInterfaces::AudioPlayerObserverInterface> observer) override;
     void removeObserver(std::shared_ptr<avsCommon::sdkInterfaces::AudioPlayerObserverInterface> observer) override;
     std::chrono::milliseconds getAudioItemOffset() override;
+    /// @}
+
+    /// @name CapabilityConfigurationInterface Functions
+    /// @{
+    std::unordered_set<std::shared_ptr<avsCommon::avs::CapabilityConfiguration>> getCapabilityConfigurations() override;
     /// @}
 
 private:
@@ -123,8 +140,8 @@ private:
      * @param messageSender The object to use for sending events.
      * @param focusManager The channel focus manager used to manage usage of the dialog channel.
      * @param contextManager The AVS Context manager used to generate system context for events.
-     * @param attachmentManager The instance of the @c AttachmentManagerInterface to use to read the attachment.
      * @param exceptionSender The object to use for sending AVS Exception messages.
+     * @param playbackRouter The playback router used for switching playback buttons handler to default.
      * @return A @c std::shared_ptr to the new @c AudioPlayer instance.
      */
     AudioPlayer(
@@ -132,8 +149,8 @@ private:
         std::shared_ptr<avsCommon::sdkInterfaces::MessageSenderInterface> messageSender,
         std::shared_ptr<avsCommon::sdkInterfaces::FocusManagerInterface> focusManager,
         std::shared_ptr<avsCommon::sdkInterfaces::ContextManagerInterface> contextManager,
-        std::shared_ptr<avsCommon::avs::attachment::AttachmentManagerInterface> attachmentManager,
-        std::shared_ptr<avsCommon::sdkInterfaces::ExceptionEncounteredSenderInterface> exceptionSender);
+        std::shared_ptr<avsCommon::sdkInterfaces::ExceptionEncounteredSenderInterface> exceptionSender,
+        std::shared_ptr<avsCommon::sdkInterfaces::PlaybackRouterInterface> playbackRouter);
 
     /// @name RequiresShutdown Functions
     /// @{
@@ -176,18 +193,6 @@ private:
      * @param info The @c DirectiveInfo containing the @c AVSDirective whose message ID is to be removed.
      */
     void removeDirective(std::shared_ptr<DirectiveInfo> info);
-
-    /**
-     * Send ExceptionEncountered and report a failure to handle the @c AVSDirective.
-     *
-     * @param info The @c AVSDirective that encountered the error and ancillary information.
-     * @param message The error message to include in the ExceptionEncountered message.
-     * @param type The type of Exception that was encountered.
-     */
-    void sendExceptionEncounteredAndReportFailed(
-        std::shared_ptr<DirectiveInfo> info,
-        const std::string& message,
-        avsCommon::avs::ExceptionErrorType type = avsCommon::avs::ExceptionErrorType::INTERNAL_ERROR);
 
     /**
      * Send the handling completed notification and clean up the resources the specified @c DirectiveInfo.
@@ -242,8 +247,19 @@ private:
     /// Performs necessary cleanup when playback has finished/stopped.
     void handlePlaybackCompleted();
 
-    /// Cancels the timers when playback has stopped/finished.
-    void cancelTimers();
+    /**
+     * Call an @c m_progressTimer method, keeping track of how many calls to m_progressTimer are in progress.
+     *
+     * @param call A function that performs the actual call.
+     */
+    void callProgressTimer(std::function<void()> call);
+
+    /**
+     * Record whether @c m_progressTimer is between @c start() and @c stop().
+     *
+     * @param Whether Whether @c m_progressTimer is between @c start() and @c stop().
+     */
+    void setIsInProgress(bool isInProgress);
 
     /// @copydoc MediaPlayerObserverInterface::onPlaybackError()
     void executeOnPlaybackError(SourceId id, const avsCommon::utils::mediaPlayer::ErrorType& type, std::string error);
@@ -271,7 +287,7 @@ private:
      */
     void executePlay(PlayBehavior playBehavior, const AudioItem& audioItem);
 
-    /// This fuction plays the next @c AudioItem in the queue.
+    /// This function plays the next @c AudioItem in the queue.
     void playNextItem();
 
     /**
@@ -312,12 +328,6 @@ private:
 
     /// Send a @c PlaybackNearlyFinished event.
     void sendPlaybackNearlyFinishedEvent();
-
-    /// Send a @c ProgressReportDelayElapsed event.
-    void sendProgressReportDelayElapsedEvent();
-
-    /// Send a @c ProgressReportIntervalElapsed event.
-    void sendProgressReportIntervalElapsedEvent();
 
     /// Send a @c PlaybackStutterStarted event.
     void sendPlaybackStutterStartedEvent();
@@ -376,6 +386,9 @@ private:
 
     /// @}
 
+    /// This is used to safely access the time utilities.
+    avsCommon::utils::timing::TimeUtils m_timeUtils;
+
     /// MediaPlayerInterface instance to send audio attachments to.
     std::shared_ptr<avsCommon::utils::mediaPlayer::MediaPlayerInterface> m_mediaPlayer;
 
@@ -388,8 +401,8 @@ private:
     /// The @c ContextManager that needs to be updated of the state.
     std::shared_ptr<avsCommon::sdkInterfaces::ContextManagerInterface> m_contextManager;
 
-    /// The @c AttachmentManager used to read attachments.
-    std::shared_ptr<avsCommon::avs::attachment::AttachmentManagerInterface> m_attachmentManager;
+    /// The @c PlaybackRouterInterface instance to use when @c AudioPlayer becomes active.
+    std::shared_ptr<avsCommon::sdkInterfaces::PlaybackRouterInterface> m_playbackRouter;
 
     /**
      * The current state of the @c AudioPlayer.
@@ -442,11 +455,8 @@ private:
     /// When in the @c BUFFER_UNDERRUN state, this records the time at which the state was entered.
     std::chrono::steady_clock::time_point m_bufferUnderrunTimestamp;
 
-    /// This timer is used to send @c ProgressReportDelayElapsed events.
-    avsCommon::utils::timing::Timer m_delayTimer;
-
-    /// This timer is used to send @c ProgressReportIntervalElapsed events.
-    avsCommon::utils::timing::Timer m_intervalTimer;
+    /// Drives periodically reporting playback progress.
+    ProgressTimer m_progressTimer;
 
     /**
      * This keeps track of the current offset in the audio stream.  Reading the offset from @c MediaPlayer is
@@ -471,6 +481,9 @@ private:
     bool m_isStopCalled;
 
     /// @}
+
+    /// Set of capability configurations that will get published using the Capabilities API
+    std::unordered_set<std::shared_ptr<avsCommon::avs::CapabilityConfiguration>> m_capabilityConfigurations;
 
     /**
      * @c Executor which queues up operations from asynchronous API calls.

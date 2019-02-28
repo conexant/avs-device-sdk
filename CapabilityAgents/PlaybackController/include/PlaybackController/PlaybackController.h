@@ -1,7 +1,5 @@
 /*
- * PlaybackController.h
- *
- * Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright 2017-2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License").
  * You may not use this file except in compliance with the License.
@@ -22,13 +20,17 @@
 #include <queue>
 #include <string>
 
+#include <AVSCommon/AVS/CapabilityConfiguration.h>
 #include <AVSCommon/AVS/MessageRequest.h>
+#include <AVSCommon/SDKInterfaces/CapabilityConfigurationInterface.h>
 #include <AVSCommon/SDKInterfaces/ContextManagerInterface.h>
 #include <AVSCommon/SDKInterfaces/ContextRequesterInterface.h>
 #include <AVSCommon/SDKInterfaces/MessageSenderInterface.h>
-#include <AVSCommon/SDKInterfaces/PlaybackControllerInterface.h>
+#include <AVSCommon/SDKInterfaces/PlaybackHandlerInterface.h>
 #include <AVSCommon/Utils/RequiresShutdown.h>
 #include <AVSCommon/Utils/Threading/Executor.h>
+
+#include "PlaybackCommand.h"
 
 namespace alexaClientSDK {
 namespace capabilityAgents {
@@ -36,25 +38,11 @@ namespace playbackController {
 
 class PlaybackController
         : public avsCommon::sdkInterfaces::ContextRequesterInterface
-        , public avsCommon::sdkInterfaces::PlaybackControllerInterface
+        , public avsCommon::sdkInterfaces::PlaybackHandlerInterface
+        , public avsCommon::sdkInterfaces::CapabilityConfigurationInterface
         , public avsCommon::utils::RequiresShutdown
         , public std::enable_shared_from_this<PlaybackController> {
 public:
-    /// Enumeration class for supported playback buttons.
-    enum class Button {
-        /// Playback Controller 'Play' button.
-        PLAY,
-
-        /// Playback Controller 'Pause' button.
-        PAUSE,
-
-        /// Playback Controller 'Next' button.
-        NEXT,
-
-        /// Playback Controller 'Previous' button.
-        PREVIOUS
-    };
-
     /**
      * Create an instance of @c PlaybackController.
      *
@@ -79,20 +67,23 @@ public:
 
     /// @name PlaybackControllerInterface Functions
     /// @{
-    void playButtonPressed() override;
-    void pauseButtonPressed() override;
-    void nextButtonPressed() override;
-    void previousButtonPressed() override;
+    void onButtonPressed(avsCommon::avs::PlaybackButton button) override;
+    void onTogglePressed(avsCommon::avs::PlaybackToggle toggle, bool action) override;
+    /// @}
+
+    /// @name CapabilityConfigurationInterface Functions
+    /// @{
+    std::unordered_set<std::shared_ptr<avsCommon::avs::CapabilityConfiguration>> getCapabilityConfigurations() override;
     /// @}
 
     /**
      * Manage completion of event being sent.
      *
-     * @param Button The @Button that was pressed to generate the message sent.
+     * @param PlaybackCommand The @PlaybackButton or @PlaybackToggle that was pressed to generate the message sent.
      * @param messageStatus The status of submitted @c MessageRequest.
      */
     void messageSent(
-        PlaybackController::Button,
+        const PlaybackCommand&,
         avsCommon::sdkInterfaces::MessageRequestObserverInterface::Status messageStatus);
 
 private:
@@ -112,14 +103,11 @@ private:
     /// @}
 
     /**
-     * Process the Button pressed.
+     * Process the @c PlaybackCommand for the pressed button.
      *
-     * This function is intended to be called by the interfaces in @c PlaybackControllerInterface to signal a Button is
-     * pressed.
-     *
-     * @param The @c Button pressed.
+     * @param The @c PlaybackCommand associated with the button pressed.
      */
-    void buttonPressed(Button button);
+    void handleCommand(const PlaybackCommand& command);
 
     /**
      * @name Executor Thread Variables
@@ -135,9 +123,12 @@ private:
     /// The @c ContextManager used to generate system context for events.
     std::shared_ptr<avsCommon::sdkInterfaces::ContextManagerInterface> m_contextManager;
 
-    /// The queue for storing buttons pressed.
-    std::queue<Button> m_buttons;
+    /// The queue for storing the commands.
+    std::queue<const PlaybackCommand*> m_commands;
     /// @}
+
+    /// Set of capability configurations that will get published using the Capabilities API
+    std::unordered_set<std::shared_ptr<avsCommon::avs::CapabilityConfiguration>> m_capabilityConfigurations;
 
     /// The @c Executor which queues up operations from asynchronous API calls to the @c PlaybackControllerInterface.
     avsCommon::utils::threading::Executor m_executor;

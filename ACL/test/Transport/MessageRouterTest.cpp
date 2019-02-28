@@ -1,7 +1,5 @@
 /*
- * MessageRouterTest.cpp
- *
- * Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright 2017-2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License").
  * You may not use this file except in compliance with the License.
@@ -14,6 +12,7 @@
  * express or implied. See the License for the specific language governing
  * permissions and limitations under the License.
  */
+
 #include "MessageRouterTest.h"
 
 #include <gtest/gtest.h>
@@ -108,7 +107,6 @@ TEST_F(MessageRouterTest, sendIsSuccessfulWhenConnected) {
     // Expect to have the message sent to the transport
     EXPECT_CALL(*m_mockTransport, send(messageRequest)).Times(1);
 
-    // TODO: ACSDK-421: Revert this to use send().
     m_router->sendMessage(messageRequest);
 
     // Since we connected we will be disconnected when the router is destroyed
@@ -121,7 +119,6 @@ TEST_F(MessageRouterTest, sendFailsWhenDisconnected) {
     // Expect to have the message sent to the transport
     EXPECT_CALL(*m_mockTransport, send(messageRequest)).Times(0);
 
-    // TODO: ACSDK-421: Revert this to use send().
     m_router->sendMessage(messageRequest);
 }
 
@@ -135,7 +132,6 @@ TEST_F(MessageRouterTest, sendFailsWhenPending) {
     // Expect to have the message sent to the transport.
     EXPECT_CALL(*m_mockTransport, send(messageRequest)).Times(1);
 
-    // TODO: ACSDK-421: Revert this to use send().
     m_router->sendMessage(messageRequest);
     waitOnMessageRouter(SHORT_TIMEOUT_MS);
 }
@@ -151,7 +147,6 @@ TEST_F(MessageRouterTest, sendMessageDoesNotSendAfterDisconnected) {
     // Expect to have the message sent to the transport
     EXPECT_CALL(*m_mockTransport, send(messageRequest)).Times(0);
 
-    // TODO: ACSDK-421: Revert this to use send().
     m_router->sendMessage(messageRequest);
 }
 
@@ -176,7 +171,7 @@ TEST_F(MessageRouterTest, serverSideDisconnectCreatesANewTransport) {
     auto newTransport = std::make_shared<NiceMock<MockTransport>>();
     initializeMockTransport(newTransport.get());
 
-    m_router->setMockTransport(newTransport);
+    m_transportFactory->setMockTransport(newTransport);
 
     // Reset the MessageRouterObserver, there should be no interactions with the observer
     m_router->onServerSideDisconnect(oldTransport);
@@ -211,7 +206,6 @@ TEST_F(MessageRouterTest, serverSideDisconnectCreatesANewTransport) {
 
     EXPECT_CALL(*newTransport.get(), send(messageRequest)).Times(1);
 
-    // TODO: ACSDK-421: Revert this to use send().
     m_router->sendMessage(messageRequest);
 
     waitOnMessageRouter(SHORT_TIMEOUT_MS);

@@ -1,7 +1,5 @@
 /*
- * KittAiWakeWordDetector.h
- *
- * Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright 2017-2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License").
  * You may not use this file except in compliance with the License.
@@ -31,6 +29,17 @@
 
 #include "KWD/AbstractKeywordDetector.h"
 #include "snowboy-detect.h"
+
+#ifdef TWO_STAGE_TRIGGER
+#include "PortAudioMicrophoneWrapper.h"
+#include "GPIOWakeWord.h"
+#include <condition_variable>
+#include <thread>
+#include <atomic>
+#include <mutex>
+
+using namespace AlexaWakeWord; 
+#endif
 
 namespace alexaClientSDK {
 namespace kwd {
@@ -76,6 +85,9 @@ public:
      * @see https://github.com/Kitt-AI/snowboy for more information regarding @c audioGain and @c applyFrontEnd.
      */
     static std::unique_ptr<KittAiKeyWordDetector> create(
+#ifdef TWO_STAGE_TRIGGER
+			std::shared_ptr<sampleApp::PortAudioMicrophoneWrapper> micWrapper,
+#endif
         std::shared_ptr<avsCommon::avs::AudioInputStream> stream,
         avsCommon::utils::AudioFormat audioFormat,
         std::unordered_set<std::shared_ptr<avsCommon::sdkInterfaces::KeyWordObserverInterface>> keyWordObservers,
@@ -113,6 +125,9 @@ private:
      * @see https://github.com/Kitt-AI/snowboy for more information regarding @c audioGain and @c applyFrontEnd.
      */
     KittAiKeyWordDetector(
+#ifdef TWO_STAGE_TRIGGER
+			std::shared_ptr<sampleApp::PortAudioMicrophoneWrapper> micWrapper,
+#endif
         std::shared_ptr<avsCommon::avs::AudioInputStream> stream,
         avsCommon::utils::AudioFormat audioFormat,
         std::unordered_set<std::shared_ptr<avsCommon::sdkInterfaces::KeyWordObserverInterface>> keyWordObservers,
@@ -143,7 +158,17 @@ private:
 
     /// The main function that reads data and feeds it into the engine.
     void detectionLoop();
-
+#ifdef TWO_STAGE_TRIGGER    
+	bool gpioDetect();
+	void checkTimeOut();
+	enum class State {
+	  UNINITIALIZED = 1,			// agent is not initialized.
+	  WORD_DETECTING, 					
+	  WORD_DETECTED,	
+	  WORD_DETECTED_TIMEOUT,		
+	  RESUME_REQUESTED
+	};
+#endif
     /// Indicates whether the internal main loop should keep running.
     std::atomic<bool> m_isShuttingDown;
 
@@ -171,6 +196,15 @@ private:
      * sampling rate of the audio data passed in.
      */
     const size_t m_maxSamplesPerPush;
+#ifdef TWO_STAGE_TRIGGER
+	/// The microphone managing object.
+	std::shared_ptr<sampleApp::PortAudioMicrophoneWrapper> m_micWrapper;
+	std::unique_ptr<GPIOWakeWord> m_gpioWakeWord;
+	pthread_mutex_t m_checkDetectTimeOut = PTHREAD_MUTEX_INITIALIZER;
+  	pthread_cond_t m_detectTrigger = PTHREAD_COND_INITIALIZER;
+	State m_currentState;
+	std::unique_ptr<std::thread> m_threadCheckTimeOut;
+#endif
 };
 
 }  // namespace kwd

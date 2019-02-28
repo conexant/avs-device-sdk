@@ -1,7 +1,5 @@
 /*
- * CapabilityAgent.cpp
- *
- * Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright 2017-2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License").
  * You may not use this file except in compliance with the License.
@@ -109,6 +107,28 @@ void CapabilityAgent::cancelDirective(const std::string& messageId) {
      */
     info->isCancelled = true;
     cancelDirective(info);
+}
+
+void CapabilityAgent::sendExceptionEncounteredAndReportFailed(
+    std::shared_ptr<DirectiveInfo> info,
+    const std::string& message,
+    avsCommon::avs::ExceptionErrorType type) {
+    if (info) {
+        if (info->directive) {
+            m_exceptionEncounteredSender->sendExceptionEncountered(
+                info->directive->getUnparsedDirective(), type, message);
+            removeDirective(info->directive->getMessageId());
+        } else {
+            ACSDK_ERROR(LX("sendExceptionEncounteredAndReportFailed").d("reason", "infoHasNoDirective"));
+        }
+        if (info->result) {
+            info->result->setFailed(message);
+        } else {
+            ACSDK_ERROR(LX("sendExceptionEncounteredAndReportFailed").d("reason", "infoHasNoResult"));
+        }
+    } else {
+        ACSDK_ERROR(LX("sendExceptionEncounteredAndReportFailed").d("reason", "infoNotFound"));
+    }
 }
 
 void CapabilityAgent::onDeregistered() {

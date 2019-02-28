@@ -1,7 +1,5 @@
 /*
- * MessageRouterTest.h
- *
- * Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright 2017-2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License").
  * You may not use this file except in compliance with the License.
@@ -14,6 +12,7 @@
  * express or implied. See the License for the specific language governing
  * permissions and limitations under the License.
  */
+
 #ifndef ALEXA_CLIENT_SDK_ACL_TEST_TRANSPORT_MESSAGEROUTERTEST_H_
 #define ALEXA_CLIENT_SDK_ACL_TEST_TRANSPORT_MESSAGEROUTERTEST_H_
 
@@ -48,14 +47,9 @@ public:
     TestableMessageRouter(
         std::shared_ptr<avsCommon::sdkInterfaces::AuthDelegateInterface> authDelegate,
         std::shared_ptr<AttachmentManager> attachmentManager,
-        std::shared_ptr<MockTransport> transport,
+        std::shared_ptr<TransportFactoryInterface> factory,
         const std::string& avsEndpoint) :
-            MessageRouter(authDelegate, attachmentManager, avsEndpoint),
-            m_mockTransport{transport} {
-    }
-
-    void setMockTransport(std::shared_ptr<MockTransport> transport) {
-        m_mockTransport = transport;
+            MessageRouter(authDelegate, attachmentManager, factory, avsEndpoint) {
     }
 
     /**
@@ -68,6 +62,16 @@ public:
         auto future = m_executor.submit([]() { ; });
         auto status = future.wait_for(millisecondsToWait);
         return status == std::future_status::ready;
+    }
+};
+
+class MockTransportFactory : public TransportFactoryInterface {
+public:
+    MockTransportFactory(std::shared_ptr<MockTransport> transport) : m_mockTransport{transport} {
+    }
+
+    void setMockTransport(std::shared_ptr<MockTransport> transport) {
+        m_mockTransport = transport;
     }
 
 private:
@@ -92,10 +96,11 @@ public:
             m_mockAuthDelegate{std::make_shared<MockAuthDelegate>()},
             m_attachmentManager{std::make_shared<AttachmentManager>(AttachmentManager::AttachmentType::IN_PROCESS)},
             m_mockTransport{std::make_shared<NiceMock<MockTransport>>()},
+            m_transportFactory{std::make_shared<MockTransportFactory>(m_mockTransport)},
             m_router{std::make_shared<TestableMessageRouter>(
                 m_mockAuthDelegate,
                 m_attachmentManager,
-                m_mockTransport,
+                m_transportFactory,
                 AVS_ENDPOINT)} {
         m_router->setObserver(m_mockMessageRouterObserver);
     }
@@ -106,7 +111,7 @@ public:
     }
 
     std::shared_ptr<avsCommon::avs::MessageRequest> createMessageRequest() {
-        return std::make_shared<avsCommon::avs::MessageRequest>(MESSAGE, nullptr);
+        return std::make_shared<avsCommon::avs::MessageRequest>(MESSAGE);
     }
     void waitOnMessageRouter(std::chrono::milliseconds millisecondsToWait) {
         auto status = m_router->isExecutorReady(millisecondsToWait);
@@ -134,6 +139,7 @@ public:
     std::shared_ptr<MockAuthDelegate> m_mockAuthDelegate;
     std::shared_ptr<AttachmentManager> m_attachmentManager;
     std::shared_ptr<NiceMock<MockTransport>> m_mockTransport;
+    std::shared_ptr<MockTransportFactory> m_transportFactory;
     std::shared_ptr<TestableMessageRouter> m_router;
     // TestableMessageRouter m_router;
 };

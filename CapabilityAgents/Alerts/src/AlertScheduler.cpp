@@ -1,7 +1,5 @@
 /*
- * AlertsScheduler.cpp
- *
- * Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright 2017-2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License").
  * You may not use this file except in compliance with the License.
@@ -53,7 +51,7 @@ void AlertScheduler::onAlertStateChange(const std::string& alertToken, State sta
     m_executor.submit([this, alertToken, state, reason]() { executeOnAlertStateChange(alertToken, state, reason); });
 }
 
-bool AlertScheduler::initialize(const std::string& storageFilePath, std::shared_ptr<AlertObserverInterface> observer) {
+bool AlertScheduler::initialize(std::shared_ptr<AlertObserverInterface> observer) {
     if (!observer) {
         ACSDK_ERROR(LX("initializeFailed").m("observer was nullptr."));
         return false;
@@ -61,16 +59,16 @@ bool AlertScheduler::initialize(const std::string& storageFilePath, std::shared_
 
     m_observer = observer;
 
-    if (!m_alertStorage->open(storageFilePath)) {
-        ACSDK_INFO(LX("initialize").m("storage file does not exist.  Creating."));
-        if (!m_alertStorage->createDatabase(storageFilePath)) {
-            ACSDK_ERROR(LX("initializeFailed").m("Could not create database file."));
+    if (!m_alertStorage->open()) {
+        ACSDK_INFO(LX("initialize").m("Couldn't open database.  Creating."));
+        if (!m_alertStorage->createDatabase()) {
+            ACSDK_ERROR(LX("initializeFailed").m("Could not create database."));
             return false;
         }
     }
 
     int64_t unixEpochNow = 0;
-    if (!getCurrentUnixTime(&unixEpochNow)) {
+    if (!m_timeUtils.getCurrentUnixTime(&unixEpochNow)) {
         ACSDK_ERROR(LX("initializeFailed").d("reason", "could not get current unix time."));
         return false;
     }
@@ -108,7 +106,7 @@ bool AlertScheduler::initialize(const std::string& storageFilePath, std::shared_
 bool AlertScheduler::scheduleAlert(std::shared_ptr<Alert> alert) {
     ACSDK_DEBUG9(LX("scheduleAlert"));
     int64_t unixEpochNow = 0;
-    if (!getCurrentUnixTime(&unixEpochNow)) {
+    if (!m_timeUtils.getCurrentUnixTime(&unixEpochNow)) {
         ACSDK_ERROR(LX("scheduleAlertFailed").d("reason", "could not get current unix time."));
         return false;
     }
@@ -170,8 +168,8 @@ bool AlertScheduler::deleteAlert(const std::string& alertToken) {
     auto alert = getAlertLocked(alertToken);
 
     if (!alert) {
-        ACSDK_ERROR(LX("handleDeleteAlertFailed").m("could not find alert in map").d("token", alertToken));
-        return false;
+        ACSDK_WARN(LX(__func__).d("Alert does not exist", alertToken));
+        return true;
     }
 
     if (!m_alertStorage->erase(alert)) {
@@ -179,6 +177,50 @@ bool AlertScheduler::deleteAlert(const std::string& alertToken) {
     }
 
     m_scheduledAlerts.erase(alert);
+    setTimerForNextAlertLocked();
+
+    return true;
+}
+
+bool AlertScheduler::deleteAlerts(const std::list<std::string>& tokenList) {
+    ACSDK_DEBUG5(LX(__func__));
+
+    bool deleteActiveAlert = false;
+    std::list<std::shared_ptr<Alert>> alertsToBeRemoved;
+
+    std::lock_guard<std::mutex> lock(m_mutex);
+
+    for (auto& alertToken : tokenList) {
+        if (m_activeAlert && m_activeAlert->getToken() == alertToken) {
+            deleteActiveAlert = true;
+            alertsToBeRemoved.push_back(m_activeAlert);
+            ACSDK_DEBUG3(LX(__func__).m("Active alert is going to be deleted."));
+            continue;
+        }
+
+        auto alert = getAlertLocked(alertToken);
+        if (!alert) {
+            ACSDK_WARN(LX(__func__).d("Alert is missing", alertToken));
+            continue;
+        }
+
+        alertsToBeRemoved.push_back(alert);
+    }
+
+    if (!m_alertStorage->bulkErase(alertsToBeRemoved)) {
+        ACSDK_ERROR(LX("deleteAlertsFailed").d("reason", "Could not erase alerts from database"));
+        return false;
+    }
+
+    if (deleteActiveAlert) {
+        deactivateActiveAlertHelperLocked(Alert::StopReason::AVS_STOP);
+        m_activeAlert.reset();
+    }
+
+    for (auto& alert : alertsToBeRemoved) {
+        m_scheduledAlerts.erase(alert);
+    }
+
     setTimerForNextAlertLocked();
 
     return true;
@@ -255,11 +297,11 @@ void AlertScheduler::onLocalStop() {
     deactivateActiveAlertHelperLocked(Alert::StopReason::LOCAL_STOP);
 }
 
-void AlertScheduler::clearData() {
+void AlertScheduler::clearData(Alert::StopReason reason) {
     ACSDK_DEBUG9(LX("clearData"));
     std::lock_guard<std::mutex> lock(m_mutex);
 
-    deactivateActiveAlertHelperLocked(Alert::StopReason::SHUTDOWN);
+    deactivateActiveAlertHelperLocked(reason);
 
     if (m_scheduledAlertTimer.isActive()) {
         m_scheduledAlertTimer.stop();
@@ -407,14 +449,14 @@ void AlertScheduler::setTimerForNextAlertLocked() {
     }
 
     if (m_scheduledAlerts.empty()) {
-        ACSDK_INFO(LX("executeScheduleNextAlertForRendering").m("no work to do."));
+        ACSDK_DEBUG9(LX("executeScheduleNextAlertForRendering").m("no work to do."));
         return;
     }
 
     auto alert = (*m_scheduledAlerts.begin());
 
     int64_t timeNow;
-    if (!getCurrentUnixTime(&timeNow)) {
+    if (!m_timeUtils.getCurrentUnixTime(&timeNow)) {
         ACSDK_ERROR(LX("executeScheduleNextAlertForRenderingFailed").d("reason", "could not get current unix time."));
         return;
     }
@@ -482,6 +524,18 @@ std::shared_ptr<Alert> AlertScheduler::getAlertLocked(const std::string& token) 
     }
 
     return nullptr;
+}
+
+std::list<std::shared_ptr<Alert>> AlertScheduler::getAllAlerts() {
+    ACSDK_DEBUG5(LX(__func__));
+
+    std::lock_guard<std::mutex> lock(m_mutex);
+
+    auto list = std::list<std::shared_ptr<Alert>>(m_scheduledAlerts.begin(), m_scheduledAlerts.end());
+    if (m_activeAlert) {
+        list.push_back(m_activeAlert);
+    }
+    return list;
 }
 
 }  // namespace alerts

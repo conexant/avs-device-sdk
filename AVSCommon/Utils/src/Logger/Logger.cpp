@@ -1,7 +1,5 @@
 /*
- * Logger.cpp
- *
- * Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright 2017-2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License").
  * You may not use this file except in compliance with the License.
@@ -25,8 +23,13 @@ namespace avsCommon {
 namespace utils {
 namespace logger {
 
-/// Configuration key for log level
+/// Configuration key for root level "logger" object.
+static const std::string CONFIG_KEY_LOGGER = "logger";
+
+/// Configuration key for "logLevel" values under "logger" and other per-module objects.
 static const std::string CONFIG_KEY_LOG_LEVEL = "logLevel";
+
+static constexpr auto AT_EXIT_THREAD_ID = "0";
 
 Logger::Logger(Level level) : m_level{level} {
 }
@@ -38,16 +41,24 @@ void Logger::log(Level level, const LogEntry& entry) {
 }
 
 void Logger::init(const configuration::ConfigurationNode configuration) {
+    if (!initLogLevel(configuration)) {
+        initLogLevel(configuration::ConfigurationNode::getRoot()[CONFIG_KEY_LOGGER]);
+    }
+}
+
+bool Logger::initLogLevel(const configuration::ConfigurationNode configuration) {
     std::string name;
     if (configuration.getString(CONFIG_KEY_LOG_LEVEL, &name)) {
         Level level = convertNameToLevel(name);
         if (level != Level::UNKNOWN) {
             setLevel(level);
+            return true;
         } else {
             // Log without ACSDK_* macros to avoid recursive invocation of constructor.
             log(Level::ERROR, LogEntry("Logger", "unknownLogLevel").d("name", name));
         }
     }
+    return false;
 }
 
 void Logger::setLevel(Level level) {
@@ -98,6 +109,12 @@ void Logger::notifyObserversOnLogLevelChanged() {
     // call the callbacks
     for (auto observer : observersCopy) {
         observer->onLogLevelChanged(m_level);
+    }
+}
+
+void Logger::logAtExit(Level level, const LogEntry& entry) {
+    if (shouldLog(level)) {
+        emit(level, std::chrono::system_clock::now(), AT_EXIT_THREAD_ID, entry.c_str());
     }
 }
 

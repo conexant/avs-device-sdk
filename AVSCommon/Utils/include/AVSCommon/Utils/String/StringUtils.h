@@ -1,7 +1,5 @@
 /*
- * StringUtils.h
- *
- * Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright 2017-2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License").
  * You may not use this file except in compliance with the License.
@@ -19,6 +17,7 @@
 #define ALEXA_CLIENT_SDK_AVSCOMMON_UTILS_INCLUDE_AVSCOMMON_UTILS_STRING_STRINGUTILS_H_
 
 #include <string>
+#include <vector>
 
 namespace alexaClientSDK {
 namespace avsCommon {
@@ -44,6 +43,31 @@ bool stringToInt(const std::string& str, int* result);
  * @return @c true If the string was parsed as an integer, otherwise @c false.
  */
 bool stringToInt(const char* str, int* result);
+
+/**
+ * A utility function to convert a vector of bytes to a printable string.  For example, the vector {1, 2, 3} will return
+ * the string "0x01 0x02 0x03"
+ *
+ * @param byteVector a vector of bytes
+ * @return a string of the hex values of each byte printed.
+ */
+std::string byteVectorToString(const std::vector<uint8_t>& byteVector);
+
+/**
+ * A utility function to convert a string into lower case.
+ *
+ * @param input The input string to be converted.
+ * @return The converted string in lower case.
+ */
+std::string stringToLowerCase(const std::string& input);
+
+/**
+ * A utility function to convert a string into upper case.
+ *
+ * @param input The input string to be converted.
+ * @return The converted string in upper case.
+ */
+std::string stringToUpperCase(const std::string& input);
 
 }  // namespace string
 }  // namespace utils

@@ -1,7 +1,5 @@
 /*
- * ObservableMessageRequest.cpp
- *
- * Copyright 2016-2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright 2016-2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License").
  * You may not use this file except in compliance with the License.
@@ -37,19 +35,25 @@ static const std::string TAG("ObservableMessageRequest");
 using namespace avsCommon::avs;
 using namespace avsCommon::avs::attachment;
 
+/// The field name for the user voice attachment.
+static const std::string AUDIO_ATTACHMENT_FIELD_NAME = "audio";
+
 ObservableMessageRequest::ObservableMessageRequest(
     const std::string& jsonContent,
     std::shared_ptr<AttachmentReader> attachmentReader) :
-        MessageRequest{jsonContent, attachmentReader},
+        MessageRequest{jsonContent},
         m_sendMessageStatus(avsCommon::sdkInterfaces::MessageRequestObserverInterface::Status::PENDING),
         m_sendCompleted{false},
         m_exceptionReceived{false} {
+    if (attachmentReader) {
+        addAttachmentReader(AUDIO_ATTACHMENT_FIELD_NAME, attachmentReader);
+    }
 }
 
 void ObservableMessageRequest::sendCompleted(
     avsCommon::sdkInterfaces::MessageRequestObserverInterface::Status sendMessageStatus) {
     std::lock_guard<std::mutex> lock(m_mutex);
-    ACSDK_DEBUG(LX("onSendCompleted").d("status", MessageRequest::statusToString(sendMessageStatus)));
+    ACSDK_DEBUG(LX("onSendCompleted").d("status", sendMessageStatus));
     m_sendMessageStatus = sendMessageStatus;
     m_sendCompleted = true;
     m_wakeTrigger.notify_all();

@@ -1,7 +1,5 @@
 /*
- * hash.h
- *
- * Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright 2017-2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License").
  * You may not use this file except in compliance with the License.
@@ -18,6 +16,7 @@
 #ifndef ALEXA_CLIENT_SDK_AVSCOMMON_UTILS_INCLUDE_AVSCOMMON_UTILS_FUNCTIONAL_HASH_H_
 #define ALEXA_CLIENT_SDK_AVSCOMMON_UTILS_INCLUDE_AVSCOMMON_UTILS_FUNCTIONAL_HASH_H_
 
+#include <cstdlib>
 #include <climits>
 #include <functional>
 
@@ -40,6 +39,21 @@ void hashCombine(size_t& seed, Type const& value) {
     std::hash<Type> hasher;
     seed = hasher(value) ^ ((seed << 1) | ((seed >> bitsMinus1) & 1));
 }
+
+/**
+ * Functor to support std::hash implementations for enum classes. Example:
+ * @code
+ * enum class MyEnum { ONE, TWO, THREE };
+ * std::unordered_map<MyEnum, std::string, EnumClassHash> myMap;
+ * return myMap[TWO];
+ * @endcode
+ */
+struct EnumClassHash {
+    template <typename T>
+    std::size_t operator()(T t) const {
+        return static_cast<std::size_t>(t);
+    }
+};
 
 }  // namespace functional
 }  // namespace utils

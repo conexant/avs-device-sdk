@@ -34,7 +34,7 @@ pcm.!default {
   type asym
   playback.pcm {
     type plug
-    slave.pcm "dmix:0,0"
+    slave.pcm "plughw:0,0"
    }
    capture.pcm {
      type plug

@@ -1,7 +1,5 @@
 /*
- * SensoryKeyWordDetector.cpp
- *
- * Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright 2017-2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License").
  * You may not use this file except in compliance with the License.
@@ -20,6 +18,19 @@
 #include <AVSCommon/Utils/Logger/Logger.h>
 
 #include "Sensory/SensoryKeywordDetector.h"
+
+#ifdef TWO_STAGE_TRIGGER
+#include <unistd.h>
+#include "WakeWordUtils.h"
+#include "WakeWordException.h"
+#if defined(I2S_MODE)
+#define DETECT_WAKE_WORD_TIMEOUT_SECONDS (6)
+#else
+#define DETECT_WAKE_WORD_TIMEOUT_SECONDS (2)
+#endif
+using namespace AlexaWakeWord; 
+#endif
+
 
 namespace alexaClientSDK {
 namespace kwd {
@@ -130,8 +141,9 @@ SnsrRC SensoryKeywordDetector::keyWordDetectedCallback(SnsrSession s, const char
     SensoryKeywordDetector* engine = static_cast<SensoryKeywordDetector*>(userData);
     SnsrRC result;
     const char* keyword;
-    double begin;
     double end;
+#ifndef NO_REVALIDATION
+    double begin;
     result = snsrGetDouble(s, SNSR_RES_BEGIN_SAMPLE, &begin);
     if (result != SNSR_RC_OK) {
         ACSDK_ERROR(LX("keyWordDetectedCallbackFailed")
@@ -139,6 +151,7 @@ SnsrRC SensoryKeywordDetector::keyWordDetectedCallback(SnsrSession s, const char
                         .d("error", getSensoryDetails(s, result)));
         return result;
     }
+#endif
 
     result = snsrGetDouble(s, SNSR_RES_END_SAMPLE, &end);
     if (result != SNSR_RC_OK) {
@@ -155,16 +168,36 @@ SnsrRC SensoryKeywordDetector::keyWordDetectedCallback(SnsrSession s, const char
                         .d("error", getSensoryDetails(s, result)));
         return result;
     }
-
+#ifdef TWO_STAGE_TRIGGER
+	pthread_cond_signal(&(engine->m_detectTrigger));
+	engine->m_currentState = State::WORD_DETECTED;
     engine->notifyKeyWordObservers(
         engine->m_stream,
         keyword,
+#ifdef NO_REVALIDATION
+        avsCommon::sdkInterfaces::KeyWordObserverInterface::UNSPECIFIED_INDEX,
+#else
+        engine->m_seekOffset + begin,
+#endif
+        engine->m_seekOffset + end);
+#else
+    engine->notifyKeyWordObservers(
+        engine->m_stream,
+        keyword,
+#ifdef NO_REVALIDATION
+        avsCommon::sdkInterfaces::KeyWordObserverInterface::UNSPECIFIED_INDEX,
+#else
         engine->m_beginIndexOfStreamReader + begin,
+#endif
         engine->m_beginIndexOfStreamReader + end);
+#endif
     return SNSR_RC_OK;
 }
 
 std::unique_ptr<SensoryKeywordDetector> SensoryKeywordDetector::create(
+#ifdef TWO_STAGE_TRIGGER
+		std::shared_ptr<sampleApp::PortAudioMicrophoneWrapper> micWrapper,
+#endif
     std::shared_ptr<avsCommon::avs::AudioInputStream> stream,
     avsCommon::utils::AudioFormat audioFormat,
     std::unordered_set<std::shared_ptr<avsCommon::sdkInterfaces::KeyWordObserverInterface>> keyWordObservers,
@@ -187,6 +220,9 @@ std::unique_ptr<SensoryKeywordDetector> SensoryKeywordDetector::create(
         return nullptr;
     }
     std::unique_ptr<SensoryKeywordDetector> detector(new SensoryKeywordDetector(
+#ifdef TWO_STAGE_TRIGGER
+		micWrapper,
+#endif
         stream, keyWordObservers, keyWordDetectorStateObservers, audioFormat, msToPushPerIteration));
     if (!detector->init(modelFilePath)) {
         ACSDK_ERROR(LX("createFailed").d("reason", "initDetectorFailed"));
@@ -204,15 +240,23 @@ SensoryKeywordDetector::~SensoryKeywordDetector() {
 }
 
 SensoryKeywordDetector::SensoryKeywordDetector(
+#ifdef TWO_STAGE_TRIGGER
+		std::shared_ptr<sampleApp::PortAudioMicrophoneWrapper> micWrapper,
+#endif
     std::shared_ptr<AudioInputStream> stream,
     std::unordered_set<std::shared_ptr<KeyWordObserverInterface>> keyWordObservers,
     std::unordered_set<std::shared_ptr<KeyWordDetectorStateObserverInterface>> keyWordDetectorStateObservers,
     avsCommon::utils::AudioFormat audioFormat,
-    std::chrono::milliseconds msToPushPerIteration) :
+    std::chrono::milliseconds msToPushPerIteration):
         AbstractKeywordDetector(keyWordObservers, keyWordDetectorStateObservers),
         m_stream{stream},
         m_session{nullptr},
-        m_maxSamplesPerPush((audioFormat.sampleRateHz / HERTZ_PER_KILOHERTZ) * msToPushPerIteration.count()) {
+        m_maxSamplesPerPush((audioFormat.sampleRateHz / HERTZ_PER_KILOHERTZ) * msToPushPerIteration.count()){
+#ifdef TWO_STAGE_TRIGGER  
+	m_micWrapper = micWrapper;
+	m_currentState = State::UNINITIALIZED;
+	m_seekOffset = 0;
+#endif
 }
 
 bool SensoryKeywordDetector::init(const std::string& modelFilePath) {
@@ -306,6 +350,77 @@ bool SensoryKeywordDetector::setUpRuntimeSettings(SnsrSession* session) {
 
     return true;
 }
+#ifdef TWO_STAGE_TRIGGER   	
+
+bool SensoryKeywordDetector::gpioDetect() {
+	bool gpioWakeWordDetect = false;
+	if(m_threadCheckTimeOut){
+	  m_threadCheckTimeOut->join();
+	  m_threadCheckTimeOut = nullptr;
+  	}
+	if(m_gpioWakeWord == NULL){
+			m_gpioWakeWord = make_unique<GPIOWakeWord>();
+			if(m_gpioWakeWord == NULL){
+				ACSDK_ERROR(LX("gpioDetect Failed").d("reason", "make_unique GPIOWakeWord."));
+				return false;
+			}
+	}
+		
+	if((m_currentState == State::WORD_DETECTED_TIMEOUT) 
+		|| (m_currentState == State::UNINITIALIZED)){
+		m_micWrapper->stopStreamingMicrophoneData();
+	}
+	if(m_currentState == State::WORD_DETECTED){
+		sleep(DETECT_WAKE_WORD_TIMEOUT_SECONDS);
+	}
+
+	/*If time out, Seek streamReader to the last of the writer cursor, because PortAudioMicrophoneWrapper aready stopped,
+	*It is the new beginning of trigger words.
+	*/
+	uint64_t seekStart = m_streamReader->tell();
+	uint64_t seekEnd = 0;
+	m_streamReader->seek(0, AudioInputStream::Reader::Reference::BEFORE_WRITER);
+	
+	while(false == gpioWakeWordDetect){
+		gpioWakeWordDetect = m_gpioWakeWord->WakeWordDetect();
+	}	
+
+	/*If wake word be detected, Again Seeking streamReader to the last of the writer cursor, because PortAudioMicrophoneWrapper aready stopped,
+	*It is the new beginning of trigger words.
+	*/
+	if(m_currentState == State::WORD_DETECTED){
+		m_streamReader->seek(0, AudioInputStream::Reader::Reference::BEFORE_WRITER);
+	}
+	
+	seekEnd = m_streamReader->tell();
+	if(seekEnd > seekStart){
+		m_seekOffset = m_seekOffset + (seekEnd - seekStart);
+	}
+	m_micWrapper->startStreamingMicrophoneData();
+
+	m_currentState = State::WORD_DETECTING;
+	m_threadCheckTimeOut = make_unique<std::thread>(&SensoryKeywordDetector::checkTimeOut, this);
+	return gpioWakeWordDetect;
+}
+void SensoryKeywordDetector::checkTimeOut(){
+	struct timespec abs_time;
+	struct timespec max_wait;
+	
+	memset(&max_wait, 0, sizeof(max_wait));
+	max_wait.tv_sec = DETECT_WAKE_WORD_TIMEOUT_SECONDS;
+	pthread_mutex_lock(&m_checkDetectTimeOut);
+	clock_gettime(CLOCK_REALTIME, &abs_time);
+	abs_time.tv_sec += max_wait.tv_sec;
+	abs_time.tv_nsec += max_wait.tv_nsec;
+
+	int  err = pthread_cond_timedwait(&m_detectTrigger, &m_checkDetectTimeOut, &abs_time);
+	if (err == ETIMEDOUT){
+	   m_currentState = State::WORD_DETECTED_TIMEOUT;
+	 }
+	pthread_mutex_unlock(&m_checkDetectTimeOut); 
+}
+
+#endif	
 
 void SensoryKeywordDetector::detectionLoop() {
     m_beginIndexOfStreamReader = m_streamReader->tell();
@@ -315,6 +430,11 @@ void SensoryKeywordDetector::detectionLoop() {
     SnsrRC result;
     while (!m_isShuttingDown) {
         bool didErrorOccur = false;
+#ifdef TWO_STAGE_TRIGGER 
+		if(m_currentState != State::WORD_DETECTING){
+			gpioDetect();
+		}
+#endif	
         wordsRead = readFromStream(
             m_streamReader,
             m_stream,

@@ -1,7 +1,5 @@
 /*
- * MessageRouter.cpp
- *
- * Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright 2016-2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License").
  * You may not use this file except in compliance with the License.
@@ -45,6 +43,7 @@ static const std::string TAG("MessageRouter");
 MessageRouter::MessageRouter(
     std::shared_ptr<AuthDelegateInterface> authDelegate,
     std::shared_ptr<AttachmentManager> attachmentManager,
+    std::shared_ptr<TransportFactoryInterface> transportFactory,
     const std::string& avsEndpoint) :
         MessageRouterInterface{"MessageRouter"},
         m_avsEndpoint{avsEndpoint},
@@ -52,7 +51,8 @@ MessageRouter::MessageRouter(
         m_connectionStatus{ConnectionStatusObserverInterface::Status::DISCONNECTED},
         m_connectionReason{ConnectionStatusObserverInterface::ChangedReason::ACL_CLIENT_REQUEST},
         m_isEnabled{false},
-        m_attachmentManager{attachmentManager} {
+        m_attachmentManager{attachmentManager},
+        m_transportFactory{transportFactory} {
 }
 
 MessageRouterInterface::ConnectionStatus MessageRouter::getConnectionStatus() {
@@ -82,7 +82,6 @@ void MessageRouter::disable() {
     disconnectAllTransportsLocked(lock, ConnectionStatusObserverInterface::ChangedReason::ACL_CLIENT_REQUEST);
 }
 
-// TODO: ACSDK-421: Revert this to use send().
 void MessageRouter::sendMessage(std::shared_ptr<MessageRequest> request) {
     if (!request) {
         ACSDK_ERROR(LX("sendFailed").d("reason", "nullRequest"));
@@ -136,15 +135,22 @@ void MessageRouter::onDisconnected(
 
     if (transport == m_activeTransport) {
         m_activeTransport.reset();
-        // Update status.  If transitioning to PENDING, also initiate the reconnect.
-        if (ConnectionStatusObserverInterface::Status::CONNECTED == m_connectionStatus) {
-            if (m_isEnabled) {
-                setConnectionStatusLocked(ConnectionStatusObserverInterface::Status::PENDING, reason);
-                createActiveTransportLocked();
-            } else if (m_transports.empty()) {
-                setConnectionStatusLocked(ConnectionStatusObserverInterface::Status::DISCONNECTED, reason);
-            }
+        switch (m_connectionStatus) {
+            case ConnectionStatusObserverInterface::Status::PENDING:
+            case ConnectionStatusObserverInterface::Status::CONNECTED:
+                if (m_isEnabled && reason != ConnectionStatusObserverInterface::ChangedReason::UNRECOVERABLE_ERROR) {
+                    setConnectionStatusLocked(ConnectionStatusObserverInterface::Status::PENDING, reason);
+                    createActiveTransportLocked();
+                } else if (m_transports.empty()) {
+                    setConnectionStatusLocked(ConnectionStatusObserverInterface::Status::DISCONNECTED, reason);
+                }
+                return;
+
+            case ConnectionStatusObserverInterface::Status::DISCONNECTED:
+                return;
         }
+
+        ACSDK_ERROR(LX("unhandledConnectionStatus").d("connectionStatus", static_cast<int>(m_connectionStatus)));
     }
 }
 
@@ -205,8 +211,8 @@ void MessageRouter::notifyObserverOnReceive(const std::string& contextId, const 
 }
 
 void MessageRouter::createActiveTransportLocked() {
-    auto transport =
-        createTransport(m_authDelegate, m_attachmentManager, m_avsEndpoint, shared_from_this(), shared_from_this());
+    auto transport = m_transportFactory->createTransport(
+        m_authDelegate, m_attachmentManager, m_avsEndpoint, shared_from_this(), shared_from_this());
     if (transport && transport->connect()) {
         m_transports.push_back(transport);
         m_activeTransport = transport;

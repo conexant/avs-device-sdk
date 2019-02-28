@@ -1,7 +1,5 @@
 /*
- * SpeakerManager.cpp
- *
- * Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright 2017-2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License").
  * You may not use this file except in compliance with the License.
@@ -20,6 +18,7 @@
 #include <rapidjson/writer.h>
 #include <rapidjson/error/en.h>
 
+#include <AVSCommon/AVS/CapabilityConfiguration.h>
 #include <AVSCommon/AVS/SpeakerConstants/SpeakerConstants.h>
 #include <AVSCommon/Utils/JSON/JSONUtils.h>
 #include <AVSCommon/Utils/Logger/Logger.h>
@@ -36,6 +35,14 @@ using namespace avsCommon::avs::speakerConstants;
 using namespace avsCommon::sdkInterfaces;
 using namespace avsCommon::utils::json;
 using namespace rapidjson;
+
+/// Speaker capability constants
+/// Speaker interface type
+static const std::string SPEAKER_CAPABILITY_INTERFACE_TYPE = "AlexaInterface";
+/// Speaker interface name
+static const std::string SPEAKER_CAPABILITY_INTERFACE_NAME = "Speaker";
+/// Speaker interface version
+static const std::string SPEAKER_CAPABILITY_INTERFACE_VERSION = "1.0";
 
 /// String to identify log entries originating from this file.
 static const std::string TAG{"SpeakerManager"};
@@ -63,6 +70,13 @@ static bool withinBounds(T value, T min, T max) {
     return true;
 }
 
+/**
+ * Creates the Speaker capability configuration.
+ *
+ * @return The Speaker capability configuration.
+ */
+static std::shared_ptr<avsCommon::avs::CapabilityConfiguration> getSpeakerCapabilityConfiguration();
+
 std::shared_ptr<SpeakerManager> SpeakerManager::create(
     const std::vector<std::shared_ptr<avsCommon::sdkInterfaces::SpeakerInterface>>& speakers,
     std::shared_ptr<avsCommon::sdkInterfaces::ContextManagerInterface> contextManager,
@@ -76,9 +90,6 @@ std::shared_ptr<SpeakerManager> SpeakerManager::create(
         return nullptr;
     } else if (!exceptionEncounteredSender) {
         ACSDK_ERROR(LX("createFailed").d("reason", "nullExceptionEncounteredSender"));
-        return nullptr;
-    } else if (speakers.size() == 0) {
-        ACSDK_ERROR(LX("createFailed").d("reason", "noSpeakersRegistered"));
         return nullptr;
     }
 
@@ -103,17 +114,28 @@ SpeakerManager::SpeakerManager(
     }
 
     ACSDK_DEBUG(LX("mapCreated")
-                    .d("numAvsSynced", m_speakerMap.count(SpeakerInterface::Type::AVS_SYNCED))
-                    .d("numLocal", m_speakerMap.count(SpeakerInterface::Type::LOCAL)));
+                    .d("numSpeakerVolume", m_speakerMap.count(SpeakerInterface::Type::AVS_SPEAKER_VOLUME))
+                    .d("numAlertsVolume", m_speakerMap.count(SpeakerInterface::Type::AVS_ALERTS_VOLUME)));
 
-    // If we have at least one AVS_SYNCED speaker, update the Context initially.
-    const auto type = SpeakerInterface::Type::AVS_SYNCED;
+    // If we have at least one AVS_SPEAKER_VOLUME speaker, update the Context initially.
+    const auto type = SpeakerInterface::Type::AVS_SPEAKER_VOLUME;
     if (m_speakerMap.count(type)) {
         SpeakerInterface::SpeakerSettings settings;
         if (!validateSpeakerSettingsConsistency(type, &settings) || !updateContextManager(type, settings)) {
             ACSDK_ERROR(LX("initialUpdateContextManagerFailed"));
         }
     }
+
+    m_capabilityConfigurations.insert(getSpeakerCapabilityConfiguration());
+}
+
+std::shared_ptr<CapabilityConfiguration> getSpeakerCapabilityConfiguration() {
+    std::unordered_map<std::string, std::string> configMap;
+    configMap.insert({CAPABILITY_INTERFACE_TYPE_KEY, SPEAKER_CAPABILITY_INTERFACE_TYPE});
+    configMap.insert({CAPABILITY_INTERFACE_NAME_KEY, SPEAKER_CAPABILITY_INTERFACE_NAME});
+    configMap.insert({CAPABILITY_INTERFACE_VERSION_KEY, SPEAKER_CAPABILITY_INTERFACE_VERSION});
+
+    return std::make_shared<CapabilityConfiguration>(configMap);
 }
 
 DirectiveHandlerConfiguration SpeakerManager::getConfiguration() const {
@@ -129,9 +151,7 @@ void SpeakerManager::doShutdown() {
     m_messageSender.reset();
     m_contextManager.reset();
     m_observers.clear();
-    for (auto typeAndSpeaker : m_speakerMap) {
-        typeAndSpeaker.second.reset();
-    }
+    m_speakerMap.clear();
 }
 
 void SpeakerManager::preHandleDirective(std::shared_ptr<CapabilityAgent::DirectiveInfo> info) {
@@ -164,7 +184,7 @@ void SpeakerManager::sendExceptionEncountered(
     std::shared_ptr<CapabilityAgent::DirectiveInfo> info,
     const std::string& message,
     avsCommon::avs::ExceptionErrorType type) {
-    m_executor.submit([this, info, &message, type] {
+    m_executor.submit([this, info, message, type] {
         m_exceptionEncounteredSender->sendExceptionEncountered(info->directive->getUnparsedDirective(), type, message);
         if (info && info->result) {
             info->result->setFailed(message);
@@ -216,8 +236,8 @@ void SpeakerManager::handleDirective(std::shared_ptr<CapabilityAgent::DirectiveI
 
     const std::string directiveName = info->directive->getName();
 
-    // Only speakers that are synced with AVS should be modified by AVS Directives.
-    SpeakerInterface::Type directiveType = SpeakerInterface::Type::AVS_SYNCED;
+    // Handling only AVS Speaker API volume here.
+    SpeakerInterface::Type directiveType = SpeakerInterface::Type::AVS_SPEAKER_VOLUME;
 
     Document payload(kObjectType);
     if (!parseDirectivePayload(info->directive->getPayload(), &payload)) {
@@ -236,7 +256,7 @@ void SpeakerManager::handleDirective(std::shared_ptr<CapabilityAgent::DirectiveI
             m_executor.submit([this, volume, directiveType, info] {
                 /*
                  * Since AVS doesn't have a concept of Speaker IDs or types, no-op if a directive
-                 * comes in and there are no AVS_SYNCED speakers.
+                 * comes in and there are no AVS_SPEAKER_VOLUME speakers.
                  */
                 if (m_speakerMap.count(directiveType) == 0) {
                     ACSDK_INFO(LX("noSpeakersRegistered").d("type", directiveType).m("swallowingDirective"));
@@ -269,7 +289,7 @@ void SpeakerManager::handleDirective(std::shared_ptr<CapabilityAgent::DirectiveI
             m_executor.submit([this, delta, directiveType, info] {
                 /*
                  * Since AVS doesn't have a concept of Speaker IDs or types, no-op if a directive
-                 * comes in and there are no AVS_SYNCED speakers.
+                 * comes in and there are no AVS_SPEAKER_VOLUME speakers.
                  */
                 if (m_speakerMap.count(directiveType) == 0) {
                     ACSDK_INFO(LX("noSpeakersRegistered").d("type", directiveType).m("swallowingDirective"));
@@ -300,7 +320,7 @@ void SpeakerManager::handleDirective(std::shared_ptr<CapabilityAgent::DirectiveI
             m_executor.submit([this, mute, directiveType, info] {
                 /*
                  * Since AVS doesn't have a concept of Speaker IDs or types, no-op if a directive
-                 * comes in and there are no AVS_SYNCED speakers.
+                 * comes in and there are no AVS_SPEAKER_VOLUME speakers.
                  */
                 if (m_speakerMap.count(directiveType) == 0) {
                     ACSDK_INFO(LX("noSpeakersRegistered").d("type", directiveType).m("swallowingDirective"));
@@ -422,10 +442,10 @@ bool SpeakerManager::updateContextManager(
     const SpeakerInterface::SpeakerSettings& settings) {
     ACSDK_DEBUG9(LX("updateContextManagerCalled").d("speakerType", type));
 
-    if (SpeakerInterface::Type::AVS_SYNCED != type) {
+    if (SpeakerInterface::Type::AVS_SPEAKER_VOLUME != type) {
         ACSDK_DEBUG(LX("updateContextManagerSkipped")
                         .d("reason", "typeMismatch")
-                        .d("expected", SpeakerInterface::Type::AVS_SYNCED)
+                        .d("expected", SpeakerInterface::Type::AVS_SPEAKER_VOLUME)
                         .d("actual", type));
         return false;
     }
@@ -614,8 +634,8 @@ void SpeakerManager::executeNotifySettingsChanged(
     const SpeakerInterface::Type& type) {
     executeNotifyObserver(source, type, settings);
 
-    // Only send an event if the AVS_SYNCED settings changed.
-    if (SpeakerInterface::Type::AVS_SYNCED == type) {
+    // Only send an event if the AVS_SPEAKER_VOLUME settings changed.
+    if (SpeakerInterface::Type::AVS_SPEAKER_VOLUME == type) {
         executeSendSpeakerSettingsChangedEvent(eventName, settings);
     } else {
         ACSDK_INFO(LX("eventNotSent").d("reason", "typeMismatch").d("speakerType", type));
@@ -654,6 +674,20 @@ bool SpeakerManager::executeGetSpeakerSettings(
     }
 
     return true;
+}
+
+void SpeakerManager::addSpeaker(std::shared_ptr<avsCommon::sdkInterfaces::SpeakerInterface> speaker) {
+    if (!speaker) {
+        ACSDK_ERROR(LX("addSpeakerFailed").d("reason", "speaker cannot be nullptr"));
+        return;
+    }
+    m_speakerMap.insert(
+        std::pair<SpeakerInterface::Type, std::shared_ptr<SpeakerInterface>>(speaker->getSpeakerType(), speaker));
+}
+
+std::unordered_set<std::shared_ptr<avsCommon::avs::CapabilityConfiguration>> SpeakerManager::
+    getCapabilityConfigurations() {
+    return m_capabilityConfigurations;
 }
 
 }  // namespace speakerManager

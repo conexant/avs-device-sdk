@@ -1,7 +1,5 @@
 /*
- * SpeakerInterface.h
- *
- * Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright 2017-2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License").
  * You may not use this file except in compliance with the License.
@@ -36,10 +34,10 @@ public:
      * This enum provides the type of the @c SpeakerInterface.
      */
     enum class Type {
-        /// Speaker source that should be synced with AVS.
-        AVS_SYNCED,
-        /// Speaker source that will not be synced with AVS.
-        LOCAL
+        /// Volume type reflecting AVS Speaker API volume.
+        AVS_SPEAKER_VOLUME,
+        /// Volume type reflecting AVS Alerts API volume.
+        AVS_ALERTS_VOLUME
     };
 
     /**
@@ -102,6 +100,11 @@ public:
      * @return The @c Type.
      */
     virtual Type getSpeakerType() = 0;
+
+    /**
+     * Destructor.
+     */
+    virtual ~SpeakerInterface() = default;
 };
 
 /**
@@ -113,11 +116,11 @@ public:
  */
 inline std::ostream& operator<<(std::ostream& stream, SpeakerInterface::Type type) {
     switch (type) {
-        case SpeakerInterface::Type::AVS_SYNCED:
-            stream << "AVS_SYNCED";
+        case SpeakerInterface::Type::AVS_SPEAKER_VOLUME:
+            stream << "AVS_SPEAKER_VOLUME";
             return stream;
-        case SpeakerInterface::Type::LOCAL:
-            stream << "LOCAL";
+        case SpeakerInterface::Type::AVS_ALERTS_VOLUME:
+            stream << "AVS_ALERTS_VOLUME";
             return stream;
     }
     stream << "UNKNOWN";

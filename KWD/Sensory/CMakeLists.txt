@@ -4,4 +4,8 @@ project(SENSORY LANGUAGES CXX)
 include(../../build/BuildDefaults.cmake)
 
 add_subdirectory("src")
-acsdk_add_test_subdirectory_if_allowed()
+
+if(NOT TWO_STAGE_TRIGGER_CONF)
+add_subdirectory("test")
+endif()
+

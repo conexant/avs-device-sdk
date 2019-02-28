@@ -1,0 +1,22 @@
+pcm.i2ssettings {
+  type plug
+  slave {
+    pcm "hw:0,0"
+    rate 16000
+    channels 2
+    format S16_LE
+  }
+}
+pcm.!default {
+  type asym
+   playback.pcm {
+     type plug
+     slave.pcm "dmix:0,0"
+   }
+   capture.pcm {
+     type plug
+     slave.pcm i2ssettings;
+   }
+}
+
+
