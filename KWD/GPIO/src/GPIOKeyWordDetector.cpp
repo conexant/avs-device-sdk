@@ -175,7 +175,6 @@ void GPIOKeyWordDetector::mainLoop() {
 #ifndef NO_REVALIDATION
     const size_t before = m_maxSamplesPerPush * 50;
 #endif
-    const size_t after = m_maxSamplesPerPush * 10;
 #ifdef AURORAGPIO
     int start = 0, end = 0;
 #endif //AURORAGPIO
@@ -259,7 +258,7 @@ void GPIOKeyWordDetector::mainLoop() {
 #else //NO_REVALIDATION
                 (m_streamReader->tell() < before ? 0 : m_streamReader->tell() - before),
 #endif //NO_REVALIDATION
-                m_streamReader->tell() + after);
+                m_streamReader->tell());
             }
 #else //AURORAGPIO
 #ifdef WRITETOFILE
@@ -288,7 +287,7 @@ void GPIOKeyWordDetector::mainLoop() {
 #else //NO_REVALIDATION
                 (m_streamReader->tell() < before ? 0 : m_streamReader->tell() - before),
 #endif //NO_REVALIDATION
-                m_streamReader->tell() + after);
+                m_streamReader->tell());
 #endif //AURORAGPIO
             usleep(MICROSECONDS_BETWEEN_READINGS);
         }
